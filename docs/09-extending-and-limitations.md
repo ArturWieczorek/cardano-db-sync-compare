@@ -22,7 +22,7 @@ data/index changes, not column changes. The tool would have coped either way.)
 ## Adding a new table or foreign key
 
 When db-sync adds tables or columns, you may need to teach the tool about them.
-Everything lives in the registries at the top of `db_comparison.py`
+Everything lives in `db_sync_comparator/registries.py`
 ([doc 06](06-how-each-table-is-compared.md)):
 
 - **A new foreign-key column** → add it to `GLOBAL_FK` (if the name is
@@ -82,7 +82,7 @@ whole table is read either way).
 
 ## Verifying a change to the tool
 
-1. `python -m py_compile db_comparison.py` — it imports cleanly.
+1. `python -m py_compile db_sync_comparator/*.py` — it imports cleanly; `make check` runs lint+types+tests.
 2. `--plan` against two real databases — 0 `UNMAPPED` columns, every table
    classified sensibly.
 3. `--block-range` on a historical window — finishes fast and reports `MATCH` for

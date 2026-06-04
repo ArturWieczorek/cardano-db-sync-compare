@@ -1,0 +1,57 @@
+[project]
+name = "cardano-db-sync-compare"
+version = "0.1.0"
+description = "Content-equivalence comparator for two cardano-db-sync PostgreSQL databases."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Artur Wieczorek", email = "artur.wieczorek@iohk.io" }]
+keywords = ["cardano", "cardano-db-sync", "postgresql", "qa", "data-integrity"]
+dependencies = [
+    "psycopg[binary]>=3.1,<4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+    "ruff>=0.11,<1",
+    "mypy>=1.10,<2",
+    "pre-commit>=4,<5",
+]
+
+[project.scripts]
+db-sync-compare = "db_sync_comparator.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["db_sync_comparator"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+fix = true
+lint.select = ["E", "F", "I", "UP", "PERF", "RUF"]
+lint.ignore = ["E501"]
+exclude = [".venv", ".venv-*"]
+
+[tool.mypy]
+python_version = "3.10"
+# Not `strict`: psycopg connection/cursor objects are dynamic enough that strict
+# mode produces cosmetic noise without improving correctness. Keep the useful
+# checks on.
+ignore_missing_imports = true
+warn_unused_configs = true
+warn_unreachable = true
+files = ["db_sync_comparator", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+# Make `import db_sync_comparator` work from the repo root without installing.
+pythonpath = ["."]
+markers = [
+    "integration: tests that need two live db-sync databases (skipped unless DSNs are set)",
+]

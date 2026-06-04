@@ -1,0 +1,15 @@
+# Bump these revs when you bump the corresponding versions in
+# requirements-dev.txt (or when ruff/mypy release a major upgrade you want).
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.7
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        files: ^(db_sync_comparator|tests)/

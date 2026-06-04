@@ -7,13 +7,20 @@
 
 ## Install
 
-Requires Python 3.10+ and PostgreSQL client libraries.
+Requires Python 3.10+. The only runtime dependency is psycopg 3.
 
 ```bash
+# with uv (recommended):
+make install                 # creates .venv and installs everything
+
+# or with plain pip:
 python3 -m venv .venv
 . .venv/bin/activate
-pip install -r requirements.txt        # installs psycopg[binary]
+pip install -e .             # installs psycopg + the db-sync-compare command
 ```
+
+This puts a `db-sync-compare` command on your PATH. You can equivalently run it
+as `python -m db_sync_comparator`. All examples below use `db-sync-compare`.
 
 ## Connecting to the two databases
 
@@ -38,7 +45,7 @@ window, which columns were dropped or translated, and the exact fingerprint SQL.
 **Always start here** to audit what the tool will do.
 
 ```bash
-python3 db_comparison.py --db1 "dbname=v1 host=/var/run/postgresql" \
+db-sync-compare --db1 "dbname=v1 host=/var/run/postgresql" \
                          --db2 "dbname=v2 host=/var/run/postgresql" --plan
 ```
 
@@ -50,7 +57,7 @@ correctness/performance check before committing to a full run. Epoch-based and
 window).
 
 ```bash
-python3 db_comparison.py --db1 ... --db2 ... --block-range 8000000:8010000
+db-sync-compare --db1 ... --db2 ... --block-range 8000000:8010000
 ```
 
 ### Default (no range) — the full comparison
@@ -60,7 +67,7 @@ minus a small epoch margin). This is the real release gate. Add `--json` to save
 machine-readable report.
 
 ```bash
-python3 db_comparison.py --db1 ... --db2 ... --json report.json
+db-sync-compare --db1 ... --db2 ... --json report.json
 ```
 
 ## All options

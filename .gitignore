@@ -5,6 +5,16 @@ __pycache__/
 .venv-*/
 venv/
 
+# Build / packaging
+build/
+dist/
+*.egg-info/
+
+# Tooling caches
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+
 # Tool output
 *.report.json
 report.json

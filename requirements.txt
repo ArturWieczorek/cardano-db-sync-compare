@@ -1,1 +1,7 @@
-psycopg[binary]>=3.1
+# Runtime dependency for cardano-db-sync-compare.
+# For development tooling (pytest, ruff, mypy, pre-commit) see requirements-dev.txt.
+#
+# Loose pins live in pyproject.toml's [project.dependencies]; `pip install .`
+# installs from pyproject directly. This file pins for reproducible installs.
+
+psycopg[binary]==3.2.3

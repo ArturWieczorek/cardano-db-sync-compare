@@ -2,7 +2,7 @@
 
 > **What's in here:** the db-sync schema knowledge baked into the tool — the
 > hand-built tables of rules that make "compare by meaning" work. These live as
-> dictionaries near the top of `db_comparison.py`.
+> dictionaries in `db_sync_comparator/registries.py`.
 >
 > **Prerequisites:** [primer 05](primers/05-surrogate-ids-sequences-and-drift.md)
 > and [how it works](03-how-it-works.md).

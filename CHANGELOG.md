@@ -1,0 +1,80 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+_Nothing yet._
+
+## [0.1.0] — 2026-06-05
+
+First release: a content-equivalence comparator for two cardano-db-sync
+PostgreSQL databases, designed to be a pre-release data-integrity gate on
+mainnet-sized (500 GB+) databases. Validated against real mainnet databases for
+db-sync 13.6.0.5 vs 13.7.1.0, where it caught a genuine `pool_relay.port`
+regression.
+
+### Added
+
+#### The comparator (`db_sync_comparator/`)
+
+- **Compares two databases by chain *meaning*, not by storage.** The surrogate
+  `id` of every row, and the foreign keys that reference it, drift between two
+  independent syncs (rollbacks burn sequence values). The tool drops the `id`
+  and **translates every foreign key to the version-stable natural key** of the
+  row it points at (block hash, tx hash, (policy, asset name), …), resolving FK
+  chains recursively. db-sync declares no FK constraints in PostgreSQL, so the
+  logical foreign keys — including irregular names like `drep_voter`,
+  `return_address`, `param_proposal` — are mapped by hand in
+  `registries.py`; an unmapped `*_id` is excluded and flagged, never hashed raw.
+- **Order-independent, duplicate-safe set hash, computed server-side.** Each row
+  is MD5'd over its normalized columns; the digest is split into two 60-bit
+  halves and summed as `numeric`. Two tables hash equal iff they are the same
+  multiset of rows — no sort, no client-side memory, only a count and two numbers
+  cross the wire. (Same family as Percona `pt-table-checksum` / Datafold
+  `data-diff`.)
+- **Common-tip bounding via indexed id-range windows.** The two databases are
+  usually at different tips, so the comparison is bounded to the lower tip. The
+  bound is applied per table as an indexed `BETWEEN` on a precomputed
+  surrogate-id range (derived by walking `block → tx → tx_out` with index seeks),
+  rather than joining each table up to `block` — which avoids whole-table scans.
+- **Tiered effort on the giant tables.** `ma_tx_out` (~1.1B rows),
+  `epoch_stake`/`reward` (~450M), `tx_out`/`tx_in` (~340M) get row count + a
+  numeric sum/min/max proof + a shallow normalized hash by default; `--full`
+  forces the exhaustive per-column hash everywhere.
+- **Merkle-style localization.** On a mismatch, the chain range is binary-searched
+  so the difference is reported as a narrow `block_no`/`epoch_no` window for
+  follow-up, instead of just "table X differs".
+- **Schema-drift aware.** Both schemas are introspected and only the shared
+  columns are compared; columns/tables present in only one database are reported,
+  not hashed.
+- **Honest defaults.** ~16 network-fetched / per-instance tables (off-chain
+  metadata, `meta`, `schema_version`, …) are excluded with a stated reason;
+  "accumulator" definition tables with no clean chain anchor are compared whole
+  and a count delta is treated as informational (it usually reflects the tip
+  gap).
+- **CLI** (`db-sync-compare` / `python -m db_sync_comparator`): `--plan` (print
+  the generated SQL, touch no data), `--block-range` (fast windowed validation),
+  full cutoff mode, `--full`, `--tables`, `--workers`, `--work-mem`,
+  `--statement-timeout`, `--json` report, and CI-friendly exit codes
+  (0 = equivalent, 1 = discrepancy, 2 = operational error).
+
+#### Tests, tooling, docs
+
+- **pytest suite** covering the pure logic: FK resolution and registry
+  invariants, SQL generation and quoting, natural-key expansion with depth
+  limiting, plan classification and tiering, the jsonb value-column guard, and
+  argument parsing — plus opt-in end-to-end tests gated behind
+  `DBSYNC_COMPARE_TEST_DSN1/2`.
+- **Quality gate**: ruff (lint + format), mypy, pytest, wired into a `Makefile`,
+  `.pre-commit-config.yaml`, and a GitHub Actions matrix (Python 3.10–3.12).
+- **Documentation** (`docs/`): a from-zero explanation — primers on indexes,
+  hashing, Cardano/db-sync, and surrogate-id drift — followed by the design, a
+  per-table reference, performance notes, and a worked case study of the
+  `pool_relay.port` finding.
+
+[Unreleased]: https://github.com/ArturWieczorek/cardano-db-sync-compare/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/ArturWieczorek/cardano-db-sync-compare/releases/tag/v0.1.0
