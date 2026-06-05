@@ -49,6 +49,13 @@ and lets the tool run many tables concurrently on separate connections from
 threads. `psql` would mean fragile text parsing. The trade-off is one dependency
 (`pip install 'psycopg[binary]'`), which is trivial.
 
+> **Why Python at all, and not Rust/Go/C++?** Because the client does ~0.1% of
+> the work — all the hashing/joining/scanning runs inside PostgreSQL. On a full
+> mainnet run the Python client used ~18 s of CPU across ~5 h of wall-clock. A
+> compiled rewrite would change nothing measurable; the database is the
+> bottleneck. Full analysis:
+> [docs/07 — "Would a faster language help?"](07-performance-and-scaling.md#would-a-faster-language-rust-go-c-help--no-the-client-isnt-the-bottleneck).
+
 ## Bounding by id-range windows — not by joining to `block`
 
 **Considered:** to restrict a table to the common chain boundary, either (a) join

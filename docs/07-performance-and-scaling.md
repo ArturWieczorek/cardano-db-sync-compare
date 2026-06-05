@@ -119,6 +119,43 @@ disk); plenty of both → more `--workers` for speed. Avoid `--full` on mainnet
 unless you have the disk and the hours — it deep-joins the 1.1B-row `ma_tx_out`
 and multiplies temp usage.
 
+## Would a faster language (Rust, Go, C++) help? — no, the client isn't the bottleneck
+
+A natural question: this tool is written in Python; would rewriting it in Rust
+make a mainnet comparison "way faster"? **No — it would make essentially no
+difference**, and the reason is the whole design.
+
+Every expensive operation runs **inside PostgreSQL**: the `md5` hashing of
+hundreds of millions / billions of rows, the FK-translation hash joins, the
+~500 GB of sequential scans, and the temp-file spill I/O. The Python process only
+builds SQL strings, opens connections, fires each query, casts two numbers out of
+the result, and orchestrates threads. It then **blocks, waiting on the database.**
+
+The measurement makes this concrete. On a full mainnet run, the Python client
+used about **18 seconds of CPU across ~5 hours of wall-clock** (≈0.1% CPU) and
+~13 MB RAM — i.e. it sat idle waiting on PostgreSQL **~99.9%** of the time. A Rust
+rewrite would shave a few of those 18 seconds; against a multi-hour run that is
+invisible.
+
+Two clarifications:
+
+- **The GIL is not a constraint here.** The workers are I/O-bound (waiting on the
+  server), and psycopg releases the GIL during socket waits, so `--workers`
+  parallelism already works. A compiled language's threading adds nothing the
+  database isn't already gating.
+- **The one case where the language *would* matter** is the *naive* design this
+  tool rejects — pulling every row to the client and hashing it in-process. There,
+  client CPU dominates and Rust would crush Python. But that design also ships
+  terabytes over the wire, which is exactly why we hash server-side instead. Once
+  the heavy work is in the database, the client language is irrelevant.
+
+**What actually speeds it up** is all database-side (see the rest of this doc):
+PostgreSQL parallel query (`max_parallel_workers_per_gather`, so one big hash scan
+uses several cores), more RAM / faster disk, higher `work_mem` to cut temp spill,
+and — the biggest algorithmic win — avoiding the Phase-2 re-scans by computing
+per-range hashes in a single pass (a true Merkle tree) instead of re-hashing a
+giant table at each bisection level.
+
 ## The honest caveat: the near-tip rollback zone
 
 The id-range window ([how it works, idea 3](03-how-it-works.md)) assumes row
