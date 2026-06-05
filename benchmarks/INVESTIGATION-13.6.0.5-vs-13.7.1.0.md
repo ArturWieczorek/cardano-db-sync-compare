@@ -120,9 +120,19 @@ that corresponds to documented db-sync issues, and localized each one.
   5.828M/5.857M, `pool_hash` 6123/6136, `drep_hash` 1603/1650, `slot_leader`
   3372/3379, `cost_model` 8/9): DB2 is ~175k blocks ahead, so it has seen more
   distinct objects. Informational.
-- **`gov_action_proposal` HASH_DIFF (96=96)** and **`epoch_state` COUNT_DIFF
-  (120 vs 118)**: no schema change; value/timing differences in Conway
-  governance processing. Low impact.
+- **`epoch_state` COUNT_DIFF (120 vs 118)** — *verified:* DB1 (13.6.0.5) holds
+  **duplicate rows** for epochs 568 and 607 (identical `committee_id`/
+  `constitution_id` twice); DB2 (13.7.1.0) has the correct single row per epoch.
+  So this is the old DB carrying duplicates and **13.7.1.0 being correct** (same
+  family as the pool_stat/epoch_stake cleanups) — not a regression.
+- **`gov_action_proposal` HASH_DIFF (96=96)** — *verified:* the rows exist in both;
+  only a **mutable lifecycle column** differs. E.g. proposal `b518ef…` (InfoAction)
+  has `dropped_epoch=NULL` in DB1 vs `627` in DB2, because the proposal was dropped
+  in **epoch 627 — after DB1's tip (epoch 626)**, so only the further-synced DB
+  witnessed it. A **tip-gap effect on a near-tip proposal's outcome column**; both
+  DBs are internally correct for their own tip. The other two differing rows are in
+  the same near-tip block band (13.17M–13.27M) with the same pattern. Not a
+  regression in either DB.
 
 ## C. Comparator changes this investigation drove (commit `907fd4b`)
 
@@ -149,7 +159,8 @@ that corresponds to documented db-sync issues, and localized each one.
 | `pool_relay` | HASH_DIFF | **regression (new)** | port signed-16-bit overflow in 13.7.1.0; **13.6.0.5 correct** |
 | `pool_stat` | COUNT_DIFF (0 vs N) | config | `pool_stat` insert option off in 13.6.0.5 |
 | accumulators | COUNT_DIFF | expected | DB2 ahead (tip gap) |
-| `gov_action_proposal`, `epoch_state` | HASH/COUNT_DIFF | expected | governance value/timing |
+| `epoch_state` | COUNT_DIFF | old-DB dups | DB1 has duplicate rows (epochs 568/607); 13.7.1.0 correct |
+| `gov_action_proposal` | HASH_DIFF | tip gap | only `dropped_epoch` differs (dropped in epoch 627, after DB1's tip); both correct |
 | `new_committee` | ERROR → fixed | tool bug | wrong anchor (no `epoch_no`); now `gov_action_proposal_id` |
 | ~45 other tables | MATCH | — | content-equivalent across the full shared history |
 
