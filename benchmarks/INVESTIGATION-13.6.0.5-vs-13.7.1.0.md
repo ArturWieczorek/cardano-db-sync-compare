@@ -18,6 +18,28 @@ differences; one is a previously-unreported regression the tool discovered.
 
 ---
 
+## Verdict for db-sync 13.7.1.0 (the release under test)
+
+**The only genuine data regression introduced by 13.7.1.0 is `pool_relay.port`.**
+Everything else is 13.7.1.0 *fixing* older defects, an expected config/tip
+difference, or a (now-fixed) comparator bug:
+
+| finding | which DB is wrong | meaning for 13.7.1.0 |
+|---|---|---|
+| `pool_relay.port` overflow | **13.7.1.0** | ⚠️ **the one genuine regression** — file upstream |
+| `tx_out` pointer addrs · `epoch` out_sum/fees · `epoch_stake` zero-rows · `epoch_state` dups | 13.6.0.5 (old) | ✅ 13.7.1.0 **fixed** these — it's the correct one |
+| `pool_stat` (0 vs N) | neither | config — feature disabled in the old build |
+| `gov_action_proposal` · 6 accumulators | neither | tip gap — both DBs correct for their own tip |
+| `new_committee` | the comparator | tool bug (anchor), already fixed |
+
+Read as a release gate: **13.7.1.0's chain data is sound vs 13.6.0.5** — it
+corrects four classes of older defects and introduces exactly one of its own
+(the pool-relay port overflow). *Caveat:* the 16 non-chain/per-instance tables
+are excluded by design (§1), and one representative `gov_action_proposal` row was
+inspected (the other two are the same near-tip lifecycle pattern, §B).
+
+---
+
 ## Phase-1 results — every flagged table (exact counts)
 
 **45 of the 59** compared tables matched. The 14 flagged (Phase-1 `!!` lines):
