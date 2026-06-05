@@ -104,6 +104,105 @@ that, in a few shapes:
   by `epoch_no` (they're written per epoch).
 - **accumulator** — tables with no clean chain anchor (next section).
 
+## Chain-anchored vs accumulator tables (the diary analogy)
+
+This is the idea behind `ANCHORS` and the whole "accumulator" notion, in plain
+language.
+
+### The one idea: a "chain coordinate"
+
+The blockchain is just a long sequence of **blocks**, numbered 0, 1, 2, 3, … (that
+number is `block_no`). Epochs (≈5-day periods) are numbered too. So "block
+8,000,000" or "epoch 291" is an **address — a position — on the chain**. Call it a
+*coordinate*.
+
+**The diary analogy.** Picture the chain as a **diary** with **one page per day**,
+where the page number is the block number.
+
+- Most things you write are **dated** — they live on a specific page (block).
+- But at the **back** of the diary you keep an **address book**: the first time you
+  ever meet someone, you write their name once. Those entries are **not dated** —
+  it's just a running list of everyone you've ever met.
+
+*Dated entry* vs *undated address-book entry* is exactly *chain-anchored table* vs
+*accumulator table*.
+
+### Chain-anchored tables — "this row has a place on the chain"
+
+Every row can be tied to a specific block (or epoch) — you can answer *"which block
+does this row belong to?"* — either **directly** (the row has a block number) or
+**indirectly** (it points at a transaction, which is in a block):
+
+| Table | What it holds | Its "date" (chain coordinate) |
+|---|---|---|
+| `block` | the blocks themselves | its own `block_no` |
+| `tx` | transactions | the block it's in (`block_id`) |
+| `tx_out` | transaction outputs | the block of the tx that created it |
+| `epoch_stake` | per-epoch stake snapshots | its `epoch_no` |
+
+These are the **dated diary entries**. Because each row knows its block/epoch, you
+can say *"only compare rows up to block X."*
+
+### Accumulator (non-anchored) tables — "a fact about a thing, with no single block"
+
+A **dictionary / registry**: one row the **first time some thing ever appears**, and
+never again — the set only **grows** (it *accumulates*). The row is a fact about the
+*thing*, not a record tied to one block:
+
+| Table | One row per… | Added when… |
+|---|---|---|
+| `multi_asset` | distinct token (policy + name) | that token is **first ever minted** |
+| `stake_address` | distinct staking address | that address is **first ever seen** |
+| `pool_hash` | distinct stake pool | that pool is **first ever seen** |
+
+These are the **undated address-book entries**: a `multi_asset` row says "this token
+exists" — it isn't "in" one block (the token is used in thousands of later blocks),
+and there is **no `block_no` column** on it.
+
+### What "bound to the cutoff" means — and why accumulators can't be bounded
+
+The two databases are usually at **different tips** (one synced further), so we only
+compare up to the **lower** tip — the **common cutoff**. (Diary analogy: one friend
+wrote to Day 110, the other to Day 100, so you agree to compare *only up to Day
+100*.)
+
+To **bound** a comparison means to add a **filter** — "only rows where block ≤
+cutoff." To write that filter you need a **column to filter on** (a coordinate):
+
+- **Chain-anchored** table → you *can* bound it: `WHERE block_no ≤ cutoff`. Easy,
+  the rows are dated.
+- **Accumulator** → you **can't** bound it: there is no block column to filter on,
+  so you can't write "only the rows up to block X." (You can't ask for "address-book
+  entries from before Day 100" — they aren't dated.) The tool is forced to compare
+  the **whole** table on each side.
+
+This is also why `--block-margin` can't help accumulators (next section): a margin
+is just a different cutoff, and there's still no column to apply it to.
+
+### Reading the accumulator sentence, term by term
+
+> *"Accumulator tables have no **chain anchor**, so the tool **can't bound** them to
+> the **common cutoff** and only reports a **row count difference**. That **count
+> delta** is usually just the **tip gap** (the further-synced DB has seen a few more
+> **first-appearances**), but the **count alone doesn't prove it**."*
+
+- **no chain anchor** — the row has no coordinate; it's an undated address-book entry.
+- **can't bound / common cutoff** — no block column to filter on, so we can't trim
+  it to the agreed stopping block; we compare the whole table.
+- **row count difference** — comparing whole tables, the further DB just has **more
+  rows**, so the counts differ (`COUNT_DIFF`).
+- **count delta** — the size of that difference (preview run: `multi_asset` 605,979
+  vs 605,947 → delta **32**).
+- **tip gap** — the ahead DB was ~971 blocks further along.
+- **first-appearances** — in those extra blocks, a few brand-new tokens/addresses
+  appeared for the first time → a few new rows. So the +32 is *consistent with* the
+  tip gap.
+- **count alone doesn't prove it** — +32 could also be "34 new − 2 old rows
+  wrongly missing," which would be a real bug hiding behind the same number. The
+  count can't tell those apart — which is why you run the **subset check** below
+  (in preview: `only_db2 = 0`, so nothing old is missing → the +32 really are just
+  new tip rows).
+
 ## The "accumulator" tables
 
 A few "definition" tables — `multi_asset`, `stake_address`, `pool_hash`,
