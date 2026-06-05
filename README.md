@@ -136,6 +136,14 @@ and that one was a real bug:
 > pinpointed it automatically — see the
 > [case study](docs/08-case-study-pool-relay-port.md).
 
+A full mainnet comparison surfaced **four** real data differences and the tool
+explained every one: three known/fixed db-sync issues it independently
+re-detected — pointer-address encoding (#2053, `tx_out`), `epoch.out_sum`/`fees`
+corruption (#2118, repaired by migration 0048), and the zero-amount `epoch_stake`
+cleanup (migration 0047) — plus the previously-unreported `pool_relay.port`
+regression above. The rest were expected config/tip differences. Full root-cause
+writeup: [benchmarks/INVESTIGATION-13.6.0.5-vs-13.7.1.0.md](benchmarks/INVESTIGATION-13.6.0.5-vs-13.7.1.0.md).
+
 ---
 
 ## Running on mainnet (operational guide)
