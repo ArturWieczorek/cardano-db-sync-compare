@@ -77,3 +77,50 @@ def compute_spine_ranges(conn, cutoff_block: int, window: tuple[int, int] | None
     ranges["pool_update"] = _minmax(conn, "pool_update", "registered_tx_id", t[0], t[1])
     ranges["gov_action_proposal"] = _minmax(conn, "gov_action_proposal", "tx_id", t[0], t[1])
     return ranges
+
+
+# How to walk from a block to each spine table's id, for the bucket-boundary
+# query below (same chain as compute_spine_ranges).
+_SPINE_STEPS: dict[str, list[tuple[str, str]]] = {
+    "block": [],
+    "tx": [("tx", "block_id")],
+    "tx_out": [("tx", "block_id"), ("tx_out", "tx_id")],
+    "pool_update": [("tx", "block_id"), ("pool_update", "registered_tx_id")],
+    "gov_action_proposal": [("tx", "block_id"), ("gov_action_proposal", "tx_id")],
+}
+
+
+def block_edges(cutoff_block: int, n_buckets: int) -> list[int]:
+    """Evenly-spaced block_no edges 0, W, 2W, …, cutoff (pure).
+
+    Used by the bucket localizer to split the chain into ~n_buckets windows. The
+    last edge is always exactly ``cutoff_block``.
+    """
+    n = max(1, n_buckets)
+    w = max(1, cutoff_block // n)
+    edges = list(range(0, cutoff_block + 1, w))
+    if edges[-1] != cutoff_block:
+        edges.append(cutoff_block)
+    return edges
+
+
+def bucket_boundary_ids(conn, spine: str, edges: list[int]) -> list:
+    """For each block edge, the spine-table id of the first row at/after that block.
+
+    One query (a correlated index-seek per edge, via ``unnest`` of the edge list),
+    so it's cheap. Returns a list aligned with ``edges``; an entry is ``None`` when
+    no row exists at/after that edge. These ids are in the same space as a table's
+    bucket anchor column (e.g. ``tx_out.tx_id``), so they can be used directly as
+    ``width_bucket`` thresholds — and because they're computed per database, the
+    per-DB thresholds differ (id drift) but **bucket k = the same block range** on
+    both, the same property the id-range windows rely on.
+    """
+    expr = "(SELECT id FROM block WHERE block_no >= s.e ORDER BY block_no, id LIMIT 1)"
+    for tbl, col in _SPINE_STEPS[spine]:
+        t, c = quote_ident(tbl), quote_ident(col)
+        expr = f"(SELECT id FROM {t} WHERE {c} >= {expr} ORDER BY {c}, id LIMIT 1)"
+    sql = f"SELECT s.e, {expr} FROM unnest(%s::bigint[]) AS s(e) ORDER BY s.e"
+    with conn.cursor() as cur:
+        cur.execute(sql, (edges,))
+        by_e = {int(e): (int(b) if b is not None else None) for e, b in cur.fetchall()}
+    return [by_e.get(e) for e in edges]

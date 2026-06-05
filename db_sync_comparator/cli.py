@@ -12,7 +12,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from db_sync_comparator import __version__
-from db_sync_comparator.compare import compare_table, localize
+from db_sync_comparator.compare import compare_table, localize, localize_buckets
 from db_sync_comparator.db import connect
 from db_sync_comparator.model import TablePlan, TableResult
 from db_sync_comparator.planning import plan_table
@@ -58,7 +58,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--block-range", help="LO:HI — compare only this block window (skips epoch tables); great for fast validation"
     )
     ap.add_argument("--tables", help="comma-separated subset of tables to compare")
-    ap.add_argument("--no-localize", action="store_true", help="skip Merkle bisection of mismatches")
+    ap.add_argument("--no-localize", action="store_true", help="skip localization of mismatches")
+    ap.add_argument(
+        "--localize",
+        choices=["bisect", "buckets"],
+        default="bisect",
+        help="localization algorithm for mismatches: 'bisect' (re-hash halves; default) or "
+        "'buckets' (one-pass per-bucket hash — much faster on giant tables)",
+    )
+    ap.add_argument(
+        "--localize-buckets",
+        type=int,
+        default=1024,
+        help="number of chain windows for --localize buckets (capped at 5000)",
+    )
     ap.add_argument(
         "--verify-accumulators",
         action="store_true",
@@ -230,7 +243,12 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     continue
                 try:
-                    r.localized = localize(p, lc1, lc2, lo, hi, cutoff_block, args.statement_timeout)
+                    if args.localize == "buckets" and p.anchor_kind == "idrange":
+                        r.localized = localize_buckets(
+                            p, lc1, lc2, cutoff_block, args.statement_timeout, min(args.localize_buckets, 5000)
+                        )
+                    else:
+                        r.localized = localize(p, lc1, lc2, lo, hi, cutoff_block, args.statement_timeout)
                     for line in r.localized:
                         print(f"  {r.name}: {line}")
                 except Exception as exc:

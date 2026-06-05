@@ -116,6 +116,12 @@ find the odd one out.) The tool prints those narrow windows so you can pull the
 actual rows and see what changed — exactly how the
 [pool-relay port bug](08-case-study-pool-relay-port.md) was found.
 
+That halving re-scans the data at each step, which is slow on a giant table, so
+there's an opt-in one-pass alternative (`--localize buckets`) that hashes ~1000
+fixed chain windows in a single scan and compares them — same answer, far less
+work. Details and trade-offs in
+[performance and scaling](07-performance-and-scaling.md#localizing-a-mismatch---localize-bisect-vs---localize-buckets).
+
 ---
 
 ## Putting it together: the run

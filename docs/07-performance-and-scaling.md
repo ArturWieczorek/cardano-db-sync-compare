@@ -119,6 +119,68 @@ disk); plenty of both → more `--workers` for speed. Avoid `--full` on mainnet
 unless you have the disk and the hours — it deep-joins the 1.1B-row `ma_tx_out`
 and multiplies temp usage.
 
+## Localizing a mismatch: `--localize bisect` vs `--localize buckets`
+
+When a table's content differs, Phase 2 tells you *where* on the chain. There are
+two algorithms; the default is unchanged, the second is an opt-in speed-up for
+giant tables.
+
+### Why this matters (a real cost)
+
+In the mainnet run, the only differing giant was `tx_out` (346M rows, the pointer
+addresses). Pinpointing it with the default method took a large chunk of the
+**9h42m** total — because of *how* the default works.
+
+### `bisect` (default) — simple, but re-scans
+
+Think of the "guess my number" game: hash the whole block range, then hash each
+half, keep the half that differs, halve again, and so on until the window is
+narrow. It's tiny code and reuses the normal hashing — but **each level re-runs a
+hash query over the data.** A row at block 7M gets scanned again at *every* level
+it falls inside, so a 346M-row table effectively gets scanned many times. Fine for
+small/medium tables; slow on a giant.
+
+### `buckets` (opt-in) — one pass
+
+`--localize buckets` instead chops the chain into ~1000 fixed windows up front
+(e.g. ~13k blocks each on mainnet) and computes the hash of **every** window in a
+**single scan** of the table (one `GROUP BY`), on each database. Then it just
+lines up the ~1000 window-hashes — the windows whose hashes differ are your
+answer. **No re-scans.**
+
+The analogy: instead of repeatedly cutting a deck in half to find one marked card
+(re-handling cards each cut), you deal the whole deck into ~1000 labelled piles
+**once**, then glance at which pile's checksum differs.
+
+```bash
+db-sync-compare --db1 ... --db2 ... --localize buckets
+db-sync-compare --db1 ... --db2 ... --localize buckets --localize-buckets 2000   # finer windows
+```
+
+### How it stays correct across the two databases
+
+Buckets are defined by **block ranges**, but each row is filed into its bucket by
+its cheap **id** column (the same `tx_id`/`tx_out_id` the id-range windows use, so
+no extra joins). For each database we precompute the id at each block edge — the
+boundaries differ between the databases (id drift), but **bucket *k* = the same
+block range on both**, so comparing bucket *k* to bucket *k* compares the same
+slice of chain. (Same trick, and same correctness property, as the id-range
+windowing in [doc 03](03-how-it-works.md).)
+
+### Trade-offs and safety
+
+- **Resolution:** `buckets` localizes to a fixed window width (~13k blocks at the
+  default 1000); `bisect` adaptively narrows to ~2000 blocks. Raise
+  `--localize-buckets` for finer windows (capped at 5000).
+- **Resource use:** one scan instead of many → **less** CPU/IO and **less** temp
+  disk than `bisect`. The per-bucket `GROUP BY` holds only ~1000 tiny rows
+  (negligible RAM); the table's FK-translation joins behave exactly like one
+  Phase-1 pass.
+- **Non-authoritative:** like all localization, it only reports *where* a mismatch
+  is — it never changes a table's `MATCH`/`DIFF` verdict or the exit code. So the
+  choice of algorithm is purely about speed/precision, never correctness.
+- **Default stays `bisect`**, so existing runs are unchanged.
+
 ## Would a faster language (Rust, Go, C++) help? — no, the client isn't the bottleneck
 
 A natural question: this tool is written in Python; would rewriting it in Rust

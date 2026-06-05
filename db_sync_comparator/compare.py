@@ -10,8 +10,8 @@ from __future__ import annotations
 import time
 
 from db_sync_comparator.model import TablePlan, TableResult
-from db_sync_comparator.ranges import compute_spine_ranges
-from db_sync_comparator.sql import bound_predicate, hash_sql, value_sql
+from db_sync_comparator.ranges import block_edges, bucket_boundary_ids, compute_spine_ranges
+from db_sync_comparator.sql import bound_predicate, hash_sql, hash_sql_bucketed, value_sql
 
 
 def run_scalar(conn, sql: str, timeout_ms: int) -> tuple:
@@ -130,4 +130,84 @@ def localize(
         mid = (a + b) // 2
         stack.append((mid + 1, b))
         stack.append((a, mid))
+    return found
+
+
+def align_bucket_boundaries(edges: list[int], b1: list, b2: list) -> tuple[list[int], list[int], list[int]]:
+    """Keep only block edges where **both** DBs have a non-null boundary and the
+    ids stay strictly increasing in both (pure).
+
+    The two DBs' boundary ids differ (id drift) but they're indexed by the same
+    block edges; filtering jointly keeps ``width_bucket`` bucket *k* meaning the
+    same block range on both sides. Returns ``(kept_edges, thr1, thr2)``.
+    """
+    ke: list[int] = []
+    t1: list[int] = []
+    t2: list[int] = []
+    last1: int | None = None
+    last2: int | None = None
+    for e, x1, x2 in zip(edges, b1, b2):
+        if x1 is None or x2 is None:
+            continue
+        if last1 is not None and (x1 <= last1 or x2 <= last2):
+            continue
+        ke.append(e)
+        t1.append(x1)
+        t2.append(x2)
+        last1, last2 = x1, x2
+    return ke, t1, t2
+
+
+def _bucket_hashes(conn, sql: str, timeout_ms: int) -> dict:
+    """Run a bucketed hash query → ``{bucket_index: (count, s1, s2)}``."""
+    with conn.cursor() as cur:
+        if timeout_ms:
+            cur.execute(f"SET statement_timeout = {int(timeout_ms)}")
+        cur.execute(sql)
+        return {int(r[0]): (r[1], int(r[2]), int(r[3])) for r in cur.fetchall()}
+
+
+def localize_buckets(
+    plan: TablePlan,
+    conn1,
+    conn2,
+    cutoff_block: int,
+    timeout_ms: int,
+    n_buckets: int = 1024,
+) -> list[str]:
+    """Single-pass bucket localization for id-range (chain-anchored) tables.
+
+    Splits the chain into ~``n_buckets`` block windows, computes the set-hash per
+    bucket in **one scan per DB** (vs the bisection's many re-scans), and reports
+    the windows whose hashes differ. Falls back to :func:`localize` when there are
+    too few buckets to be useful (tiny chains). Non-authoritative — like all
+    localization, it only reports *where*, never the verdict.
+    """
+    assert plan.spine is not None  # idrange tables always have a spine
+    edges = block_edges(cutoff_block, n_buckets)
+    ke, t1, t2 = align_bucket_boundaries(
+        edges, bucket_boundary_ids(conn1, plan.spine, edges), bucket_boundary_ids(conn2, plan.spine, edges)
+    )
+    if len(ke) < 2:
+        return localize(plan, conn1, conn2, 0, cutoff_block, cutoff_block, timeout_ms)
+
+    p1 = bound_predicate(plan, compute_spine_ranges(conn1, cutoff_block, None), 0, False)
+    p2 = bound_predicate(plan, compute_spine_ranges(conn2, cutoff_block, None), 0, False)
+    m1 = _bucket_hashes(conn1, hash_sql_bucketed(plan, p1, t1), timeout_ms)
+    m2 = _bucket_hashes(conn2, hash_sql_bucketed(plan, p2, t2), timeout_ms)
+
+    found: list[str] = []
+    for v in sorted(set(m1) | set(m2)):
+        a = m1.get(v, (0, 0, 0))
+        b = m2.get(v, (0, 0, 0))
+        if a == b:
+            continue
+        if v == 0:  # below the first threshold
+            lo, hi = 0, ke[0]
+        elif v >= len(ke):  # at/after the last threshold
+            lo, hi = ke[-1], cutoff_block
+        else:
+            lo, hi = ke[v - 1], ke[v]
+        kindword = "content differs" if a[0] == b[0] else "row count differs"
+        found.append(f"block_no {lo}..{hi}: {kindword} (db1 n={a[0]}, db2 n={b[0]})")
     return found

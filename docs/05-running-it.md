@@ -87,7 +87,9 @@ db-sync-compare --db1 ... --db2 ... --json report.json
 | `--workers N` | 4 | tables compared in parallel (each uses 2 connections) |
 | `--work-mem SIZE` | `256MB` | per-session `work_mem` for the translation hash joins |
 | `--statement-timeout MS` | 0 (none) | abort any single query after this many ms |
-| `--no-localize` | off | skip the Phase-2 binary-search zoom-in on mismatches |
+| `--no-localize` | off | skip the Phase-2 zoom-in on mismatches |
+| `--localize` | `bisect` | localization algorithm: `bisect` (re-hash halves) or `buckets` (one-pass per-window hash — much faster on giant tables; see [doc 07](07-performance-and-scaling.md#localizing-a-mismatch---localize-bisect-vs---localize-buckets)) |
+| `--localize-buckets N` | 1024 | number of chain windows for `--localize buckets` (capped 5000) |
 | `--verify-accumulators` | off | for accumulator `COUNT_DIFF`s, subset-check the two key sets to confirm a count delta is purely tip-gap extra rows (see [doc 06](06-how-each-table-is-compared.md#how-to-verify-an-accumulator-count_diff-tip-gap-or-real)) |
 | `--json PATH` | — | write a structured JSON report |
 

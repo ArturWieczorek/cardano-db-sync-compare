@@ -157,6 +157,29 @@ def hash_sql(plan: TablePlan, predicate: str) -> str:
     )
 
 
+def hash_sql_bucketed(plan: TablePlan, predicate: str, thresholds: list[int]) -> str:
+    """Like :func:`hash_sql`, but computes the set-hash **per bucket** in a single
+    pass: each row is assigned to a bucket via ``width_bucket(anchor_col, thresholds)``
+    (the per-DB id boundaries from :func:`ranges.bucket_boundary_ids`), then grouped.
+
+    Reuses the exact same normalized row hash, joins and predicate as ``hash_sql``;
+    the only addition is the bucket key and a ``GROUP BY``. One scan replaces the
+    many re-scans of the bisection localizer. See ``docs/07``.
+    """
+    assert plan.anchor_col is not None  # bucketing is only for idrange tables
+    arr = "ARRAY[" + ",".join(str(int(t)) for t in thresholds) + "]::bigint[]"
+    bkt = f"width_bucket(t0.{quote_ident(plan.anchor_col)}, {arr})"
+    row = "md5(ROW(" + ", ".join(plan.select_exprs) + ")::text) AS h" if plan.select_exprs else "md5('')::text AS h"
+    return (
+        f"SELECT bkt, {SETHASH_SELECT} FROM (\n"
+        f"  SELECT {bkt} AS bkt, {row}\n"
+        f"  FROM {quote_ident(plan.name)} t0\n"
+        f"  {plan.joins}\n"
+        f"  WHERE {predicate}\n"
+        f") q GROUP BY bkt"
+    )
+
+
 def value_sql(plan: TablePlan, predicate: str) -> str | None:
     """The cheap numeric proof (sum/min/max) for a giant table, or ``None``."""
     if not plan.value_col:

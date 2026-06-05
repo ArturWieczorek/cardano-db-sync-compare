@@ -29,6 +29,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`--localize {bisect,buckets}`** (default `bisect`, unchanged) — a pluggable
+  Phase-2 localization algorithm. `buckets` splits the chain into ~`--localize-buckets`
+  (default 1024, cap 5000) fixed windows and computes every window's set-hash in a
+  **single scan per DB** (one `GROUP BY`), instead of the bisection's repeated
+  re-scans — much faster, and less CPU/IO/temp-disk, on giant tables like `tx_out`.
+  Buckets are keyed by the cheap id column but defined by block ranges (per-DB id
+  boundaries, same chain range on both), reusing the id-range machinery. Localization
+  is non-authoritative, so this never affects a verdict or exit code. New
+  `localize_buckets` + `ranges.block_edges`/`bucket_boundary_ids` +
+  `sql.hash_sql_bucketed`; unit tests (edge math, bucket SQL, boundary alignment) and
+  a fixture e2e test (inject a fault in a known block, assert both `bisect` and
+  `buckets` localize to it). Docs: `docs/07` (full why/what/how), `docs/05`, `docs/03`.
+
 - **`--verify-accumulators`** (opt-in) — for accumulator `COUNT_DIFF`s, stream
   both natural-key sets (server-side, index-ordered, memory-bounded) and
   merge-compare them, reporting `only_db1` / `only_db2`. A clean subset means the

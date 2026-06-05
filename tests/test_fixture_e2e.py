@@ -247,6 +247,35 @@ def test_giant_table_has_value_proof(two_dbs):
 # --------------------------------------------------------------------------- #
 
 
+def _covers(window: str, block_no: int) -> bool:
+    # parse "block_no LO..HI: ..." and check LO <= block_no <= HI
+    import re
+
+    m = re.search(r"block_no (\d+)\.\.(\d+)", window)
+    if not m:
+        return False
+    return int(m.group(1)) <= block_no <= int(m.group(2))
+
+
+def test_localize_buckets_finds_the_faulty_block(two_dbs):
+    # Inject a fault in a KNOWN block (block_no 3 = tx3, tx_id 103 in DB2) and
+    # check both localizers point at it. tx3's two outputs get a bumped value.
+    from db_sync_comparator.compare import localize, localize_buckets
+
+    c1, c2 = two_dbs
+    c2.execute("UPDATE tx_out SET value = value + 1 WHERE tx_id = 103")
+    plan, result, cutoff = _compare_one(c1, c2, "tx_out")
+    assert result.status == "HASH_DIFF"
+
+    bucket_wins = localize_buckets(plan, c1, c2, cutoff, 0, n_buckets=1024)
+    assert bucket_wins, "buckets localizer returned no window"
+    assert any(_covers(w, 3) for w in bucket_wins), bucket_wins
+
+    # parity: the bisection localizer also brackets block 3
+    bisect_wins = localize(plan, c1, c2, 0, cutoff, cutoff, 0)
+    assert any(_covers(w, 3) for w in bisect_wins), bisect_wins
+
+
 def test_corrupted_value_is_hash_diff(two_dbs):
     c1, c2 = two_dbs
     c2.execute("UPDATE tx_out SET value = value + 1 WHERE id = 103")  # one in-range output
