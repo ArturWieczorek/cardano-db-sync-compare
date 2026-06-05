@@ -45,12 +45,24 @@ server. If you change the comparison engine, add or extend a `fixture` test.
 - Every `("fk", col, target)` in `NATURAL_KEYS` and every FK-map target must have
   a `NATURAL_KEYS` entry — there are tests asserting this (`test_registries.py`).
 
+## Source of truth for the db-sync schema
+
+The registries in `db_sync_comparator/registries.py` mirror the cardano-db-sync
+schema. They are **not** authoritative — db-sync is. Before changing them (or
+when a comparison looks wrong), check the upstream schema, **at the git tag that
+matches the db-sync version you're comparing** (`master` drifts ahead of releases):
+
+- Schema reference (human-readable): <https://github.com/IntersectMBO/cardano-db-sync/blob/master/doc/schema.md>
+- Schema source (authoritative — the Haskell definitions): <https://github.com/IntersectMBO/cardano-db-sync/tree/master/cardano-db/src/Cardano/Db/Schema>
+- On-the-wire DDL (migrations): <https://github.com/IntersectMBO/cardano-db-sync/tree/master/cardano-db/test/schema>
+- All db-sync docs: <https://github.com/IntersectMBO/cardano-db-sync/tree/master/doc>
+
 ## When the db-sync schema changes
 
-Update the registries in `db_sync_comparator/registries.py`
-(see `docs/09-extending-and-limitations.md`) and **add a test** for the new
-behaviour. Then run `--plan` against two real databases to confirm classification
-and zero unmapped columns.
+Cross-check the upstream sources above, update the registries in
+`db_sync_comparator/registries.py` (see `docs/09-extending-and-limitations.md`),
+and **add a test** for the new behaviour. Then run `--plan` against two real
+databases to confirm classification and zero unmapped columns.
 
 ## Authorship
 

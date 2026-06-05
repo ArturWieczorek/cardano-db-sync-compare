@@ -11,6 +11,15 @@ Because db-sync doesn't *declare* its foreign keys and some columns aren't tied 
 the chain in obvious ways, the tool can't figure everything out by itself. It
 carries five small registries of schema knowledge. Here's what each one is for.
 
+> **These registries mirror db-sync; db-sync is the source of truth.** When the
+> schema changes, verify against the upstream
+> [schema reference](https://github.com/IntersectMBO/cardano-db-sync/blob/master/doc/schema.md),
+> the [schema source](https://github.com/IntersectMBO/cardano-db-sync/tree/master/cardano-db/src/Cardano/Db/Schema)
+> (authoritative), and the
+> [migrations](https://github.com/IntersectMBO/cardano-db-sync/tree/master/cardano-db/test/schema)
+> — at the git **tag matching the db-sync version you're comparing**, since
+> `master` runs ahead of releases.
+
 ## 1. `EXCLUDED_TABLES` — tables we deliberately don't compare
 
 About 16 tables, each with a reason, because their contents aren't a pure function

@@ -26,3 +26,4 @@ surrogate-id drift — with analogies.
 7. [Performance and scaling](07-performance-and-scaling.md)
 8. [Case study: the pool-relay port bug](08-case-study-pool-relay-port.md)
 9. [Extending and limitations](09-extending-and-limitations.md)
+10. [Testing strategy](10-testing.md)

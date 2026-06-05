@@ -43,6 +43,8 @@ You know what a table, a row, a primary key (PK) and a foreign key (FK) are, but
    real regression the tool caught, read end to end.
 9. [Extending and limitations](09-extending-and-limitations.md) — how to grow the
    tool and what it deliberately doesn't do.
+10. [Testing strategy](10-testing.md) — the three tiers of tests, why PostgreSQL
+    not SQLite, and how the synthetic-database tests work.
 
 ### If you already know db-sync well
 

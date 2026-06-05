@@ -22,8 +22,13 @@ data/index changes, not column changes. The tool would have coped either way.)
 ## Adding a new table or foreign key
 
 When db-sync adds tables or columns, you may need to teach the tool about them.
-Everything lives in `db_sync_comparator/registries.py`
-([doc 06](06-how-each-table-is-compared.md)):
+First confirm the new shape against the upstream **source of truth** — the
+[schema reference](https://github.com/IntersectMBO/cardano-db-sync/blob/master/doc/schema.md),
+the [schema source](https://github.com/IntersectMBO/cardano-db-sync/tree/master/cardano-db/src/Cardano/Db/Schema),
+and the [migrations](https://github.com/IntersectMBO/cardano-db-sync/tree/master/cardano-db/test/schema),
+at the git **tag matching the db-sync version under comparison** (`master` runs
+ahead of releases). Then teach the tool: everything lives in
+`db_sync_comparator/registries.py` ([doc 06](06-how-each-table-is-compared.md)):
 
 - **A new foreign-key column** → add it to `GLOBAL_FK` (if the name is
   unambiguous) or `FK_MAP` (if the same name means different things in different

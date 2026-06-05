@@ -10,7 +10,14 @@ cannot be introspected from the database and must be encoded by hand —
 * how each table is **anchored** to a chain coordinate so it can be bounded to a
   common tip.
 
-Authoritative source: ``cardano-db/src/Cardano/Db/Schema/`` in the db-sync repo.
+These tables mirror the db-sync schema but are NOT authoritative — db-sync is.
+When updating them, cross-check the upstream sources **at the git tag matching the
+db-sync version under comparison** (master drifts ahead of releases):
+
+* schema reference:  https://github.com/IntersectMBO/cardano-db-sync/blob/master/doc/schema.md
+* schema source:     https://github.com/IntersectMBO/cardano-db-sync/tree/master/cardano-db/src/Cardano/Db/Schema
+* migrations (DDL):  https://github.com/IntersectMBO/cardano-db-sync/tree/master/cardano-db/test/schema
+
 See ``docs/06-how-each-table-is-compared.md`` for the prose explanation.
 """
 

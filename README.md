@@ -103,6 +103,18 @@ Dependencies point inward toward `model`/`registries`; importing the top-level
 package pulls in **no** database driver, so the pure-logic modules unit-test
 without psycopg installed.
 
+### Source of truth for the schema
+
+`db_sync_comparator/registries.py` encodes db-sync schema knowledge (natural
+keys, logical foreign keys, anchors) by hand — it **mirrors** db-sync but isn't
+authoritative. When the schema changes, cross-check upstream, **at the git tag
+matching the db-sync version you're comparing** (`master` runs ahead of releases):
+the [schema reference](https://github.com/IntersectMBO/cardano-db-sync/blob/master/doc/schema.md),
+the [schema source](https://github.com/IntersectMBO/cardano-db-sync/tree/master/cardano-db/src/Cardano/Db/Schema)
+(the authoritative Haskell definitions), and the
+[migrations / on-the-wire DDL](https://github.com/IntersectMBO/cardano-db-sync/tree/master/cardano-db/test/schema).
+See [AGENTS.md](AGENTS.md) and [docs/09](docs/09-extending-and-limitations.md).
+
 ---
 
 ## Status
@@ -162,7 +174,9 @@ pytest -m integration
 ```
 
 CI runs the DB-free suite on Python 3.10–3.12 and the `fixture` suite against a
-PostgreSQL service container.
+PostgreSQL service container. The full testing strategy — what each tier is for,
+why PostgreSQL and not SQLite, and how the synthetic fixtures work — is in
+[docs/10-testing.md](docs/10-testing.md).
 
 ---
 
