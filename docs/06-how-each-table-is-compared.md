@@ -22,20 +22,81 @@ carries five small registries of schema knowledge. Here's what each one is for.
 
 ## 1. `EXCLUDED_TABLES` — tables we deliberately don't compare
 
-About 16 tables, each with a reason, because their contents aren't a pure function
-of the chain:
+**The big idea:** the tool answers *"do these two databases hold the same
+**blockchain** data?"* About 16 tables are excluded because their contents are
+**not blockchain data** — they're facts about *this database instance*, data
+*downloaded from the internet*, or *operator decisions*. Comparing them would flag
+differences that are **expected and meaningless**, drowning out real signals.
+`--plan` prints the full list with a reason for each.
 
-- **Network-fetched** (`off_chain_pool_data`, `off_chain_vote_data`, their helper
-  and error tables): filled by fetching metadata over HTTP. Which URLs resolved,
-  when, and what bytes came back are non-deterministic — two honest syncs differ.
-- **Per-instance bookkeeping** (`meta`, `schema_version`, `extra_migrations`,
-  `schema_migrations`): record *this* database's version, start time, and
-  migration log — different by definition.
-- **Volatile / operational** (`epoch_sync_time` is wall-clock sync durations;
-  `reverse_index` is a tip-only rollback helper; `delisted_pool`,
-  `reserved_pool_ticker` are SMASH operator state, not chain data).
+They fall into four groups.
 
-`--plan` prints the list and the reason for each.
+### Group 1 — Per-instance bookkeeping (about *this* database, not the chain)
+
+| Table | What it holds | Why excluded |
+|---|---|---|
+| `meta` | this sync's db-sync **version**, **start time**, network name | Two syncs started at different times by different versions → differs by definition (e.g. `start_time` = when you launched db-sync). |
+| `schema_version` | the migration stage numbers (e.g. `15.48.6`) | Different db-sync versions have different schema versions — that's the point of a version. (This is how we spotted **44 vs 48**.) |
+| `schema_migrations`, `extra_migrations` | the log of which migrations ran | Per-instance history. (`schema_migrations` is legacy and may not exist on newer schemas — why the run showed 16, not 17.) |
+
+### Group 2 — Network-fetched off-chain metadata (downloaded over HTTP)
+
+The chain only stores a **URL + a hash**. db-sync *optionally* downloads the actual
+JSON and stores it. **Whether** it downloaded, **when**, and **what bytes** came
+back depend on the network at that moment — not the blockchain.
+
+| Table | What it holds | Why excluded |
+|---|---|---|
+| `off_chain_pool_data` | downloaded **stake-pool** metadata (name, ticker, JSON) | A pool points at e.g. `https://mypool.io/meta.json`; one sync fetched it, the other hit a 404 or a changed file → different rows, neither "wrong". |
+| `off_chain_pool_fetch_error` | log of **failed** pool-metadata fetches | Depends on transient network failures. |
+| `off_chain_vote_data` | downloaded **governance/DRep** metadata | Fetched from URLs the chain points at. |
+| `off_chain_vote_author`, `off_chain_vote_drep_data`, `off_chain_vote_external_update`, `off_chain_vote_gov_action_data`, `off_chain_vote_reference` | fields **parsed from** the downloaded vote metadata | Derived from `off_chain_vote_data`; inherit its non-determinism. |
+| `off_chain_vote_fetch_error` | log of **failed** vote-metadata fetches | Non-deterministic. |
+
+(These fetchers are **off by default** since db-sync 13.7.0.3, so these tables are
+often empty anyway.)
+
+> **Contrast — why `pool_relay` is *not* here.** `pool_relay` holds the relay
+> endpoints (ipv4/dns/**port**) a pool declares **in its on-chain registration
+> certificate** — that's blockchain data, so it **is** compared. The off-chain
+> *metadata JSON* (`off_chain_pool_data`) is downloaded from a URL and is excluded.
+> Same pool, two different things. This is exactly why the on-chain
+> `pool_relay.port` overflow was caught while off-chain noise was ignored.
+
+### Group 3 — Volatile / operational (transient internal state)
+
+| Table | What it holds | Why excluded |
+|---|---|---|
+| `epoch_sync_time` | **wall-clock seconds** this db-sync took to sync each epoch | A performance metric of the machine, not the chain. |
+| `reverse_index` | a near-tip helper that makes **rollbacks** fast | Only near the tip, encodes internal **row-ids** (which drift), and gets pruned — volatile and meaningless to compare. |
+
+### Group 4 — SMASH operator state (human/admin decisions, not chain)
+
+| Table | What it holds | Why excluded |
+|---|---|---|
+| `delisted_pool` | pools an operator **manually delisted** in SMASH | A moderation list set by an admin, not derived from the chain. |
+| `reserved_pool_ticker` | reserved ticker names | Registry/operator policy, not chain data. |
+
+### Is excluding them good design? — Yes; including them would be *wrong*
+
+- **Including them would create false alarms.** `schema_version` *will* differ
+  between versions; `meta.start_time` *will* differ between launches; `off_chain_*`
+  *can* differ because a website was up for one sync and down for the other. If we
+  hashed these, nearly every comparison would "fail" on noise and **hide** the one
+  real issue (like `pool_relay.port`).
+- **It's transparent, not hidden.** Each excluded table carries a one-line reason;
+  `--plan` prints the full list; the summary reports the count.
+- **It's reversible if you care.** If your question were "did the off-chain
+  fetcher behave the same?", compare those out-of-band with a network-aware check —
+  but that's a *different* question from "same chain data", and it's
+  non-deterministic by nature.
+- **Honest limitation:** the verdict therefore says nothing about off-chain
+  metadata, sync timing, or SMASH state. For a **release data-integrity gate on
+  chain content**, that's the right scope.
+
+In short: the comparator compares **what the blockchain deterministically
+produces** and excludes **what the instance / network / operator produces** — the
+correct, honest way to answer "is the chain data the same?"
 
 ## 2. `GIANT_TABLES` — the ones that get tiered effort
 
