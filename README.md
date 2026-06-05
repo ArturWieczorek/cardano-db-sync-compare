@@ -237,6 +237,35 @@ See [AGENTS.md](AGENTS.md) and [docs/09](docs/09-extending-and-limitations.md).
 
 ---
 
+## Scope — what is and isn't compared
+
+So there are **no surprises** about what a "match" actually covers:
+
+- **Compared:** every **chain-derived** table, up to the **common tip** of the two
+  databases (the lower of the two, minus a small margin). That's ~59 of the ~75
+  tables — all the block/tx/output/stake/pool/governance data.
+- **NOT compared (excluded by design):** ~**16 tables whose contents are *not* a
+  function of the chain**, so two honest syncs legitimately differ there. They are
+  **not part of the equivalence verdict**:
+  - **network-fetched** off-chain metadata — `off_chain_pool_data`,
+    `off_chain_vote_data`, their helper/error tables (which URLs resolved, when,
+    and the bytes fetched are non-deterministic);
+  - **per-instance bookkeeping** — `meta` (this DB's version/start time),
+    `schema_version`, `schema_migrations`, `extra_migrations`;
+  - **volatile/operational** — `epoch_sync_time` (wall-clock), `reverse_index`
+    (tip-only rollback helper);
+  - **SMASH operator state** — `delisted_pool`, `reserved_pool_ticker`.
+- **Accumulator tables** (e.g. `multi_asset`, `stake_address`) have no chain anchor,
+  so a row-**count** delta there is reported as *informational* (usually the tip
+  gap) — verify it with `--verify-accumulators`. See
+  [docs/06](docs/06-how-each-table-is-compared.md).
+
+`db-sync-compare --plan` prints the full excluded list with the reason for each.
+Rationale: [docs/04](docs/04-what-i-used-and-why.md#excluding-network-fetched-and-per-instance-tables);
+limitations: [docs/09](docs/09-extending-and-limitations.md).
+
+---
+
 ## Status
 
 Validated against two real **mainnet** databases:

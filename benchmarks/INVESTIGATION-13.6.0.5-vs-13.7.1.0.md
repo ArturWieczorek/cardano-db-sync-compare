@@ -30,7 +30,7 @@ difference, or a (now-fixed) comparator bug:
 | `tx_out` pointer addrs · `epoch` out_sum/fees · `epoch_stake` zero-rows · `epoch_state` dups | 13.6.0.5 (old) | ✅ 13.7.1.0 **fixed** these — it's the correct one |
 | `pool_stat` (0 vs N) | neither | config — feature disabled in the old build |
 | `gov_action_proposal` · 6 accumulators | neither | tip gap — both DBs correct for their own tip |
-| `new_committee` | the comparator | tool bug (anchor), already fixed |
+| `new_committee` | the comparator | tool bug (anchor); fixed and **re-run → MATCH** (0 rows) |
 
 Read as a release gate: **13.7.1.0's chain data is sound vs 13.6.0.5** — it
 corrects four classes of older defects and introduces exactly one of its own
@@ -158,9 +158,13 @@ that corresponds to documented db-sync issues, and localized each one.
 
 ## C. Comparator changes this investigation drove (commit `907fd4b`)
 
-- **`new_committee` anchor bug (fixed).** It was anchored by `epoch_no`, but that
-  table has no such column → per-table `ERROR`. Now anchored via
-  `gov_action_proposal_id` (like `committee`); regression test added. See §F.
+- **`new_committee` anchor bug (fixed + re-verified).** It was anchored by
+  `epoch_no`, but that table has no such column → per-table `ERROR` in the full
+  run, so it was *never actually compared*. Now anchored via
+  `gov_action_proposal_id` (like `committee`); regression test added (§F).
+  **Re-run with the fix on the two mainnet DBs: `new_committee` → MATCH** (0 rows
+  up to the cutoff; a legacy/empty table on mainnet), alongside `committee`,
+  `committee_member`, `constitution` → MATCH. So the error left no unknown.
 - **One-sided-zero tables are flagged, not localized.** Driven by `pool_stat`
   (0 vs N): the tool now reports *"one side has 0 rows — table likely disabled in
   config (insert_options) for that version, not a data difference"* and Phase 2
@@ -183,7 +187,7 @@ that corresponds to documented db-sync issues, and localized each one.
 | accumulators | COUNT_DIFF | expected | DB2 ahead (tip gap) |
 | `epoch_state` | COUNT_DIFF | old-DB dups | DB1 has duplicate rows (epochs 568/607); 13.7.1.0 correct |
 | `gov_action_proposal` | HASH_DIFF | tip gap | only `dropped_epoch` differs (dropped in epoch 627, after DB1's tip); both correct |
-| `new_committee` | ERROR → fixed | tool bug | wrong anchor (no `epoch_no`); now `gov_action_proposal_id` |
+| `new_committee` | ERROR → fixed → MATCH | tool bug | wrong anchor (no `epoch_no`); now `gov_action_proposal_id`; re-run → MATCH (0 rows) |
 | ~45 other tables | MATCH | — | content-equivalent across the full shared history |
 
 ## E. Was the cutoff placed too early? (boundary analysis)
