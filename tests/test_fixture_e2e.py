@@ -278,6 +278,22 @@ def test_pool_relay_port_overflow_is_found_and_localized(two_dbs):
     assert windows and any("block_no" in w for w in windows)
 
 
+def test_verify_accumulator_subset_check(two_dbs, _db_dsns):
+    # DB2 gets an extra multi_asset row → the subset check must report it as a
+    # clean superset (only_db2 = 1, only_db1 = 0), confirming a tip-gap-style delta.
+    from db_sync_comparator.verify import verify_accumulator
+
+    _, c2 = two_dbs
+    c2.execute(
+        "INSERT INTO multi_asset VALUES (777, decode(md5('extra-pol'),'hex'), decode(md5('extra-name'),'hex'), 'x')"
+    )
+    v = verify_accumulator(_db_dsns[0], _db_dsns[1], "multi_asset")
+    assert v["verified"] is True
+    assert v["only_db1"] == 0
+    assert v["only_db2"] == 1
+    assert "db1 ⊆ db2" in v["verdict"]
+
+
 def test_one_sided_zero_is_flagged_as_likely_disabled(two_dbs):
     # Mirrors the real pool_stat case: one version has the table populated, the
     # other has 0 rows because the feature was disabled in its insert_options.

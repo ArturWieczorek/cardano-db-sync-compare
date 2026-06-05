@@ -83,6 +83,7 @@ def build_json_report(
                 "skipped_cols": r.skipped_cols,
                 "schema_drift": r.schema_drift,
                 "localized": r.localized,
+                "verify": r.verify,
             }
             for r in sorted(results, key=lambda x: x.name)
         ],

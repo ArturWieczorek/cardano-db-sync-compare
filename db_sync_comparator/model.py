@@ -57,3 +57,4 @@ class TableResult:
     skipped_cols: list[str] = field(default_factory=list)
     schema_drift: dict = field(default_factory=dict)
     localized: list[str] = field(default_factory=list)
+    verify: dict = field(default_factory=dict)  # optional accumulator subset-check result

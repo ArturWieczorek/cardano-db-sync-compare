@@ -23,10 +23,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the `pool_stat` insert option off.)
 - **`--block-margin N`** option: pull the block cutoff back below the lower tip
   by N blocks to stay out of the volatile near-tip rollback zone (mainnet
-  `k`≈2160). Complements the existing `--epoch-margin`.
+  `k`≈2160). Complements the existing `--epoch-margin`. (Note: this only bounds
+  chain-anchored tables; accumulators have no anchor, so use `--verify-accumulators`
+  for those.)
 
 ### Added
 
+- **`--verify-accumulators`** (opt-in) — for accumulator `COUNT_DIFF`s, stream
+  both natural-key sets (server-side, index-ordered, memory-bounded) and
+  merge-compare them, reporting `only_db1` / `only_db2`. A clean subset means the
+  delta is purely tip-gap extra rows; if neither side is a subset it's a real
+  difference. Read-only and off by default. New module `db_sync_comparator/verify.py`
+  + `db.stream_keys`; unit tests for the merge + key SQL, and an end-to-end
+  fixture test. Validated on preview LSM-vs-standard
+  (`benchmarks/INVESTIGATION-preview-lsm-vs-standard.md`).
 - **End-to-end fixture tests against a real PostgreSQL** (`tests/test_fixture_e2e.py`,
   marker `fixture`). Two miniature "db-sync-shaped" databases are seeded with
   identical chain content but **drifted surrogate ids** and a **tip gap**, then

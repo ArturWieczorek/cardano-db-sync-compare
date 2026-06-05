@@ -116,4 +116,62 @@ validation run: `multi_asset` 11,108,713 vs 11,128,803 — the ~20k extra are to
 first minted in the blocks only database 2 has.) A count difference here is
 expected; it is **not** a failure.
 
+### What "tip-gap delta" means (and why `--block-margin` can't fix it)
+
+A **tip-gap delta** is the most common reason an accumulator's row count differs:
+the two databases are at slightly different **tips**, so the one synced further
+has seen a few more *first-appearances* (new tokens, new stake addresses) and
+therefore has a few more accumulator rows. It's benign — just the cost of
+comparing two DBs that aren't at the exact same block.
+
+A natural thought is "pull the cutoff back with `--block-margin` so both sides
+only cover the same range." **That doesn't help accumulators** — `--block-margin`
+(like the cutoff itself) only bounds **chain-anchored** tables, because bounding
+needs a block/epoch coordinate to filter on. Accumulators have **no chain
+anchor**, so they're always compared whole, and a margin can't trim them. The
+right tool for an accumulator `COUNT_DIFF` is not a margin — it's the subset
+check below.
+
+### How to verify an accumulator COUNT_DIFF (tip-gap or real?)
+
+A count delta *alone* doesn't prove it's only the tip gap — in principle a DB
+could be missing some old rows while having extra new ones, netting a similar
+count. To be **certain**, check whether the smaller key-set is a clean **subset**
+of the larger. Two ways:
+
+**Automatic — `--verify-accumulators`.** Add the flag; for every accumulator
+`COUNT_DIFF` the tool streams both natural-key sets (server-side, index-ordered,
+memory-bounded) and merge-compares them, reporting `only_db1` / `only_db2`:
+
+```
+multi_asset:   only_db1=32 only_db2=0 → db2 ⊆ db1 — db1 is a clean superset (tip-gap-consistent; db1 ahead)
+stake_address: only_db1=10 only_db2=0 → db2 ⊆ db1 — db1 is a clean superset (tip-gap-consistent; db1 ahead)
+```
+
+`only_db2 = 0` is the decisive fact: the behind DB has **nothing** the ahead DB
+lacks, so the whole delta is extra tip rows. If **both** sides are non-zero,
+it's *not* a clean tip gap and deserves a closer look.
+
+**Manual — `psql` + `comm`** (the same thing, by hand; useful to understand it).
+Real example from the preview LSM-vs-standard run (DB1 = LSM, ~971 blocks ahead;
+DB2 = standard):
+
+```bash
+# 1. dump each DB's natural-key set, sorted (multi_asset's key is (policy, name))
+psql -d lsm-preview... -tAc \
+  "SELECT encode(policy,'hex')||':'||encode(name,'hex') FROM multi_asset" | sort > lsm.txt
+psql -d preview...     -tAc \
+  "SELECT encode(policy,'hex')||':'||encode(name,'hex') FROM multi_asset" | sort > std.txt
+
+# 2. compare the two sorted sets with comm
+comm -23 lsm.txt std.txt | wc -l   # keys only in LSM (ahead)   → 32
+comm -13 lsm.txt std.txt | wc -l   # keys only in standard (behind) → 0  ← must be 0
+```
+
+`comm -13` (lines only in the second file) returning **0** means the behind DB is
+a subset of the ahead DB → the +32 are purely tip-gap rows. For `stake_address`
+the key is `encode(hash_raw,'hex')` and the result was the same (10 / 0). This is
+exactly what `--verify-accumulators` automates. See the full write-up in
+[benchmarks/INVESTIGATION-preview-lsm-vs-standard.md](../benchmarks/INVESTIGATION-preview-lsm-vs-standard.md).
+
 **Next:** [Performance and scaling →](07-performance-and-scaling.md)

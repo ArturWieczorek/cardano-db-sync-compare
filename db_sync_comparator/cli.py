@@ -20,6 +20,7 @@ from db_sync_comparator.ranges import compute_spine_ranges, get_tip
 from db_sync_comparator.report import build_json_report, print_summary, write_json_report
 from db_sync_comparator.schema import indexed_columns, introspect
 from db_sync_comparator.sql import bound_predicate, hash_sql
+from db_sync_comparator.verify import verify_accumulator
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -58,6 +59,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument("--tables", help="comma-separated subset of tables to compare")
     ap.add_argument("--no-localize", action="store_true", help="skip Merkle bisection of mismatches")
+    ap.add_argument(
+        "--verify-accumulators",
+        action="store_true",
+        help="for accumulator COUNT_DIFFs, stream both key sets and subset-check them "
+        "(confirms a count delta is purely tip-gap extra rows, not a real difference)",
+    )
     ap.add_argument("--statement-timeout", type=int, default=0, help="per-statement timeout in ms (0 = none)")
     ap.add_argument(
         "--work-mem", default="256MB", help="work_mem per session (helps the big FK-translation hash joins)"
@@ -69,6 +76,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument("--json", dest="json_path", help="write a structured report to this path")
     return ap
+
+
+def _verify_one(dsn1: str, dsn2: str, table: str) -> dict:
+    """Subset-check one accumulator, converting any operational error into a
+    result dict (so a single failure can't abort the run)."""
+    try:
+        return verify_accumulator(dsn1, dsn2, table)
+    except Exception as exc:
+        return {"verified": False, "reason": f"verify failed: {exc}"}
 
 
 def parse_block_range(spec: str | None) -> tuple[int, int] | None:
@@ -222,6 +238,21 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             lc1.close()
             lc2.close()
+
+    # Optional deep verification of accumulator count-deltas (subset check).
+    if args.verify_accumulators:
+        acc_diffs = [r for r in results if r.status == "COUNT_DIFF" and r.kind == "accumulator"]
+        if acc_diffs:
+            print("\nVerifying accumulator count-deltas (key-set subset check) ...")
+            for r in acc_diffs:
+                r.verify = _verify_one(args.db1, args.db2, r.name)
+                if r.verify.get("verified"):
+                    print(
+                        f"  {r.name}: only_db1={r.verify['only_db1']} only_db2={r.verify['only_db2']}"
+                        f" → {r.verify['verdict']}"
+                    )
+                else:
+                    print(f"  {r.name}: not verified — {r.verify.get('reason')}")
 
     hard, errors = print_summary(results, excluded)
 

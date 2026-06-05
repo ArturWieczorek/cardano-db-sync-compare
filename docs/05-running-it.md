@@ -88,6 +88,7 @@ db-sync-compare --db1 ... --db2 ... --json report.json
 | `--work-mem SIZE` | `256MB` | per-session `work_mem` for the translation hash joins |
 | `--statement-timeout MS` | 0 (none) | abort any single query after this many ms |
 | `--no-localize` | off | skip the Phase-2 binary-search zoom-in on mismatches |
+| `--verify-accumulators` | off | for accumulator `COUNT_DIFF`s, subset-check the two key sets to confirm a count delta is purely tip-gap extra rows (see [doc 06](06-how-each-table-is-compared.md#how-to-verify-an-accumulator-count_diff-tip-gap-or-real)) |
 | `--json PATH` | — | write a structured JSON report |
 
 ## Reading the output
@@ -105,7 +106,7 @@ The statuses:
 | Status | Meaning |
 |--------|---------|
 | `MATCH` | same row count **and** same content fingerprint → identical chain data |
-| `COUNT_DIFF` | the row counts differ. For an **accumulator** table (see [doc 06](06-how-each-table-is-compared.md)) this is usually just the tip gap and is **informational**; for any other table it's a real discrepancy |
+| `COUNT_DIFF` | the row counts differ. For an **accumulator** table (see [doc 06](06-how-each-table-is-compared.md)) this is usually just the tip gap and is **informational** — confirm with `--verify-accumulators`; for any other table it's a real discrepancy. A one-sided `0 vs N` means the table was likely disabled in that version's config |
 | `HASH_DIFF` | same row count but the content fingerprint differs → real difference in the data |
 | `VALUE_DIFF` | the numeric sum/min/max of a giant table's value column differs |
 | `ERROR` | a query failed for this table (reported, doesn't stop the run) |
