@@ -143,14 +143,26 @@ too, so passing locally is the cheapest way to keep CI green):
 pre-commit install
 ```
 
-Tests are pure-logic and need no database. The end-to-end tests in
-`tests/test_integration.py` run only when you point them at two databases:
+`make test` runs the **DB-free** suite (pure-logic unit tests). There are also
+two database-backed suites, both excluded from the default run:
 
 ```bash
+# End-to-end tests on tiny SYNTHETIC fixtures against a real PostgreSQL.
+# Spins a throwaway cluster via pytest-postgresql (or set
+# DBSYNC_COMPARE_PG_EXTERNAL=1 + PG* to use an existing server / CI service).
+# They seed two miniature db-sync-shaped DBs with deliberate id drift, a tip
+# gap, and faults (corrupted value, dropped row, the pool_relay port overflow)
+# and assert the tool classifies each correctly.
+make test-db                       # = pytest -m fixture
+
+# Integration tests against your OWN two db-sync databases (opt-in):
 export DBSYNC_COMPARE_TEST_DSN1="dbname=v1 host=/var/run/postgresql"
 export DBSYNC_COMPARE_TEST_DSN2="dbname=v2 host=/var/run/postgresql"
 pytest -m integration
 ```
+
+CI runs the DB-free suite on Python 3.10–3.12 and the `fixture` suite against a
+PostgreSQL service container.
 
 ---
 

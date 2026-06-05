@@ -20,6 +20,11 @@ make check     # ruff check + ruff format --check + mypy + pytest
 `pre-commit install` wires ruff + mypy to run automatically. Keep changes
 formatted and typed; CI is the matrix in `.github/workflows/ci.yml`.
 
+`make test` is DB-free (pure-logic unit tests). `make test-db` (= `pytest -m
+fixture`) runs the end-to-end tests against a real PostgreSQL — pytest-postgresql
+locally, or set `DBSYNC_COMPARE_PG_EXTERNAL=1` + `PG*` env to use an existing
+server. If you change the comparison engine, add or extend a `fixture` test.
+
 ## Architecture rules
 
 - Dependencies point **inward** toward `model.py` and `registries.py`. Don't add

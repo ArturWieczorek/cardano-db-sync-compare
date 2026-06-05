@@ -14,6 +14,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8,<9",
+    "pytest-postgresql>=6,<7",
     "ruff>=0.11,<1",
     "mypy>=1.10,<2",
     "pre-commit>=4,<5",
@@ -49,9 +50,12 @@ files = ["db_sync_comparator", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --tb=short"
+# The default run is DB-free: exclude the end-to-end "fixture" tests (they need a
+# PostgreSQL server). Run them explicitly with `pytest -m fixture` / `make test-db`.
+addopts = '-v --tb=short -m "not fixture"'
 # Make `import db_sync_comparator` work from the repo root without installing.
 pythonpath = ["."]
 markers = [
     "integration: tests that need two live db-sync databases (skipped unless DSNs are set)",
+    "fixture: end-to-end tests on synthetic data against a real PostgreSQL (pytest-postgresql or a CI service)",
 ]

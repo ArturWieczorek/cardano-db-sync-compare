@@ -2,7 +2,7 @@ VENV_DIR := .venv
 ACTIVATE_SCRIPT := $(VENV_DIR)/bin/activate
 PKG := db_sync_comparator
 
-.PHONY: help venv install activate shell clean lint format typecheck test check
+.PHONY: help venv install activate shell clean lint format typecheck test test-db check
 
 help:
 	@echo ""
@@ -15,7 +15,8 @@ help:
 	@echo "  make lint       - ruff check"
 	@echo "  make format     - ruff format"
 	@echo "  make typecheck  - mypy"
-	@echo "  make test       - pytest"
+	@echo "  make test       - pytest (DB-free unit tests)"
+	@echo "  make test-db    - pytest -m fixture (end-to-end tests; needs PostgreSQL)"
 	@echo "  make check      - lint + format --check + typecheck + test (what CI runs)"
 	@echo "  make clean      - Remove the virtual environment and caches"
 	@echo ""
@@ -50,6 +51,12 @@ typecheck:
 
 test:
 	pytest
+
+# End-to-end tests against a real PostgreSQL. Uses pytest-postgresql to spin a
+# throwaway cluster locally; set DBSYNC_COMPARE_PG_EXTERNAL=1 (+ PG* env) to use
+# an existing server instead.
+test-db:
+	pytest -m fixture
 
 check:
 	ruff check $(PKG) tests

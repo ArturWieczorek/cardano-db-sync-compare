@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **End-to-end fixture tests against a real PostgreSQL** (`tests/test_fixture_e2e.py`,
+  marker `fixture`). Two miniature "db-sync-shaped" databases are seeded with
+  identical chain content but **drifted surrogate ids** and a **tip gap**, then
+  individual tests inject one fault each — a corrupted value, a dropped row, the
+  real `pool_relay.port` signed-16-bit overflow, an extra accumulator row — and
+  assert the tool returns `MATCH` / `HASH_DIFF` / `COUNT_DIFF` and localizes
+  correctly. PostgreSQL (not SQLite) because the generated SQL is Postgres-specific;
+  provided by pytest-postgresql locally or a service container in CI
+  (`DBSYNC_COMPARE_PG_EXTERNAL`). Run with `make test-db`. The default `make test`
+  stays DB-free.
 
 ## [0.1.0] — 2026-06-05
 

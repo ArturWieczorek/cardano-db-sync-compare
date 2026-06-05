@@ -40,5 +40,38 @@ jobs:
       - name: Type-check (mypy)
         run: mypy db_sync_comparator tests
 
-      - name: Run tests
+      - name: Run tests (DB-free)
         run: pytest
+
+  e2e:
+    # End-to-end tests on synthetic data against a real PostgreSQL service.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DBSYNC_COMPARE_PG_EXTERNAL: "1"
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Run end-to-end fixture tests
+        run: pytest -m fixture
