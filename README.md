@@ -44,6 +44,126 @@ straight into CI. Full option reference: [docs/05-running-it.md](docs/05-running
 
 ---
 
+## Getting started from scratch (step by step)
+
+A complete walkthrough, assuming nothing.
+
+### 0. What you need first
+
+- **Python 3.10+** (`python3 --version`).
+- **Two cardano-db-sync PostgreSQL databases to compare** — this tool does **not**
+  create or sync them; it reads two databases that **already exist** (e.g. one per
+  db-sync version). You need an account that can **read** both (read-only is
+  enough — the tool never writes to them).
+- That's it. No Cardano node, no superuser. Optionally [`uv`](https://docs.astral.sh/uv/)
+  for the fast install path below.
+
+### 1. Get the code
+
+```bash
+git clone https://github.com/ArturWieczorek/cardano-db-sync-compare.git
+cd cardano-db-sync-compare
+```
+
+### 2. Install (pick one path)
+
+```bash
+# Path A — pip (works everywhere)
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -e .            # installs psycopg + the `db-sync-compare` command
+
+# Path B — uv (faster; `make install` uses it). Install uv once, then:
+make install                # creates .venv, installs everything, opens a shell
+```
+
+Either way you now have a `db-sync-compare` command (equivalently
+`python -m db_sync_comparator`). Check it:
+
+```bash
+db-sync-compare --version
+```
+
+### 3. Point it at your two databases
+
+Each DB is a libpq **connection string** (`conninfo`). The common shapes:
+
+```bash
+# local PostgreSQL over the Unix socket (peer auth — no password):
+"dbname=mydb_v1 host=/var/run/postgresql"
+
+# remote / TCP with a user + password:
+"host=10.0.0.5 port=5432 dbname=mydb_v1 user=cexplorer password=secret"
+```
+
+If you'd rather not put the password in the command, put it in a
+[pgpass file](https://www.postgresql.org/docs/current/libpq-pgpass.html) and pass
+`--pgpass /path/to/pgpass`. **Sanity-check connectivity first** with `psql`:
+
+```bash
+psql "dbname=mydb_v1 host=/var/run/postgresql" -c "select max(block_no) from block;"
+```
+
+If that prints a block number for **both** databases, you're ready.
+
+### 4. Dry run — see the plan, touch no data
+
+Always start here. It prints, per table, exactly what SQL it will run and how
+it's bounded — and proves it understands your schema:
+
+```bash
+db-sync-compare \
+  --db1 "dbname=mydb_v1 host=/var/run/postgresql" \
+  --db2 "dbname=mydb_v2 host=/var/run/postgresql" \
+  --plan
+```
+
+Confirm there are **`0` UNMAPPED columns** in the output (the tool knows every
+foreign key). If you see `UNMAPPED`, your db-sync schema is newer than the
+tool's registry — see [docs/09](docs/09-extending-and-limitations.md).
+
+### 5. Fast spot-check on a small slice
+
+Validates end-to-end quickly before a long run (compares one block window):
+
+```bash
+db-sync-compare --db1 "..." --db2 "..." --block-range 8000000:8010000
+```
+
+### 6. The real comparison
+
+```bash
+db-sync-compare --db1 "..." --db2 "..." --json report.json --verify-accumulators
+```
+
+This compares everything up to the **common tip** and writes a machine-readable
+`report.json`. On **mainnet-sized** (500 GB+) databases this runs for hours and
+should be launched **detached** — see
+[Running on mainnet](#running-on-mainnet-operational-guide) below for the exact
+`nohup` invocation, what files to watch, and hardware/disk needs.
+
+### 7. Read the result
+
+The summary line and per-table lines tell you everything; exit code for CI:
+
+| exit | meaning |
+|---|---|
+| `0` | content-equivalent over the compared range |
+| `1` | a real discrepancy (or per-table error) was found |
+| `2` | couldn't run (e.g. connection failure) |
+
+`MATCH` = identical; `HASH_DIFF`/`COUNT_DIFF`/`VALUE_DIFF` = a real difference
+(the tool prints *where* in the chain); an **accumulator** `COUNT_DIFF` or a
+`0 vs N` count is usually expected (tip gap / a feature disabled in config) — the
+output says so. Full interpretation guide: [docs/05](docs/05-running-it.md#reading-the-output).
+
+### 8. Learn more
+
+New to the concepts (indexing, hashing, why row ids differ between DBs)? The
+[docs](docs/00-start-here.md) teach everything from zero with analogies.
+
+---
+
 ## Why it's built this way
 
 Two db-sync databases built from the same chain are **not** stored identically,
