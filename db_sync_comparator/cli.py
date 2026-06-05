@@ -41,6 +41,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument("--cutoff-block", type=int, help="override common boundary block_no")
     ap.add_argument(
+        "--block-margin",
+        type=int,
+        default=0,
+        help="blocks to pull the common cutoff back below the lower tip, to stay out of the "
+        "volatile near-tip rollback zone (mainnet security parameter k ~= 2160)",
+    )
+    ap.add_argument(
         "--epoch-margin",
         type=int,
         default=2,
@@ -118,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
 
     bn1, en1 = get_tip(c1)
     bn2, en2 = get_tip(c2)
-    cutoff_block = args.cutoff_block if args.cutoff_block else min(bn1, bn2)
+    cutoff_block = max(0, (args.cutoff_block if args.cutoff_block else min(bn1, bn2)) - args.block_margin)
     cutoff_epoch = max(0, min(en1, en2) - args.epoch_margin)
 
     print("=" * 78)
@@ -186,9 +193,12 @@ def main(argv: list[str] | None = None) -> int:
                 + (f"  {r.note}" if r.note and r.status != "MATCH" else "")
             )
 
-    # Phase 2: localize chain-anchored mismatches (not accumulators, not in window mode).
+    # Phase 2: localize chain-anchored mismatches only — skip accumulators and
+    # one-sided-zero tables (a feature disabled in config isn't worth bisecting).
     mismatches = [
-        r for r in results if r.status in ("HASH_DIFF", "COUNT_DIFF", "VALUE_DIFF") and r.kind != "accumulator"
+        r
+        for r in results
+        if r.status in ("HASH_DIFF", "COUNT_DIFF", "VALUE_DIFF") and r.kind != "accumulator" and r.n1 != 0 and r.n2 != 0
     ]
     if mismatches and not args.no_localize and not block_range:
         print("\nPhase 2: localizing mismatches ...")

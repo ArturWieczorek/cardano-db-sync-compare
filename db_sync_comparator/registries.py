@@ -247,7 +247,9 @@ ANCHORS: dict[str, tuple] = {
     "pool_stat": ("epoch", "epoch_no"),
     "reward": ("epoch", "earned_epoch"),
     "reward_rest": ("epoch", "earned_epoch"),
-    "new_committee": ("epoch", "epoch_no"),
+    # new_committee is a Conway governance table tied to a proposal — it has
+    # gov_action_proposal_id (NOT epoch_no), so anchor it like committee.
+    "new_committee": ("gap_fk", "gov_action_proposal_id"),
     # Monotonic definition tables with no single clean chain anchor. Compared
     # full-table; a positive count delta usually just reflects the tip gap.
     "multi_asset": ("accumulator",),

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`new_committee` anchor.** It was registered as epoch-anchored, but the table
+  has no `epoch_no` column (its key is `gov_action_proposal_id`), which produced
+  a per-table `ERROR` on real databases. Now anchored via `gov_action_proposal_id`
+  like `committee`. Added a regression test.
+
+### Changed
+
+- **One-sided-zero tables are flagged, not localized.** When a table has rows in
+  one database and **0** in the other, the result now says *"likely disabled in
+  config (insert_options) for that version, not a data difference"* and Phase 2
+  skips bisecting it. (Real case: `pool_stat` 0 vs 1.13M — the older build ran
+  with the `pool_stat` insert option off.)
+- **`--block-margin N`** option: pull the block cutoff back below the lower tip
+  by N blocks to stay out of the volatile near-tip rollback zone (mainnet
+  `k`≈2160). Complements the existing `--epoch-margin`.
+
 ### Added
 
 - **End-to-end fixture tests against a real PostgreSQL** (`tests/test_fixture_e2e.py`,

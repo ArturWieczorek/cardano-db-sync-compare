@@ -82,6 +82,7 @@ db-sync-compare --db1 ... --db2 ... --json report.json
 | `--full` | off | exhaustive every-column fingerprint on the giant tables too |
 | `--giant-fk-depth N` | 1 | how deep to translate foreign keys on giants in tiered mode |
 | `--cutoff-block N` | lower tip | override the common boundary block height |
+| `--block-margin N` | 0 | pull the block cutoff back N blocks below the lower tip, to stay out of the volatile near-tip rollback zone (mainnet `k`≈2160) |
 | `--epoch-margin N` | 2 | epochs to hold back from the tip (avoid the in-progress epoch) |
 | `--workers N` | 4 | tables compared in parallel (each uses 2 connections) |
 | `--work-mem SIZE` | `256MB` | per-session `work_mem` for the translation hash joins |

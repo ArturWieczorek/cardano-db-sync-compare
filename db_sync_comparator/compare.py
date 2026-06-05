@@ -51,7 +51,17 @@ def compare_table(
             r.value1 = tuple(str(x) for x in va)
             r.value2 = tuple(str(x) for x in vb)
 
-        if plan.kind == "accumulator" and r.n1 != r.n2:
+        if (r.n1 == 0) != (r.n2 == 0):
+            # One side empty, the other populated → almost never data corruption;
+            # the table was disabled in that version's insert_options (e.g.
+            # pool_stat / governance / offchain), or is a feature only one
+            # version writes. Flag clearly and don't bother localizing.
+            r.status = "COUNT_DIFF"
+            r.note = (
+                f"one side has 0 rows ({r.n1} vs {r.n2}) — table likely disabled in "
+                "config (insert_options) for that version, not a data difference"
+            )
+        elif plan.kind == "accumulator" and r.n1 != r.n2:
             # Expected when one DB is synced further; flag, don't fail.
             r.status = "COUNT_DIFF"
             r.note = "accumulator table; count delta usually reflects the tip gap (objects first-seen after the cutoff)"

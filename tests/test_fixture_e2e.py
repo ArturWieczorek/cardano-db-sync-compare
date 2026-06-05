@@ -278,6 +278,18 @@ def test_pool_relay_port_overflow_is_found_and_localized(two_dbs):
     assert windows and any("block_no" in w for w in windows)
 
 
+def test_one_sided_zero_is_flagged_as_likely_disabled(two_dbs):
+    # Mirrors the real pool_stat case: one version has the table populated, the
+    # other has 0 rows because the feature was disabled in its insert_options.
+    # The tool must call this out (not localize it as data corruption).
+    c1, c2 = two_dbs
+    c1.execute("TRUNCATE epoch_stake")  # DB1 now empty, DB2 still populated
+    _, result, _ = _compare_one(c1, c2, "epoch_stake")
+    assert result.status == "COUNT_DIFF"
+    assert result.n1 == 0 and result.n2 > 0
+    assert "disabled in config" in result.note
+
+
 def test_accumulator_count_delta_is_informational(two_dbs):
     c1, c2 = two_dbs
     c2.execute(

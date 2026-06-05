@@ -60,3 +60,14 @@ def test_fk_targets_have_natural_keys():
 
 def test_giant_and_excluded_are_disjoint():
     assert not (GIANT_TABLES & set(EXCLUDED_TABLES))
+
+
+def test_new_committee_anchored_via_gov_action_proposal():
+    # Regression: new_committee has no epoch_no column (it has
+    # gov_action_proposal_id), so it must be anchored like committee, not by epoch.
+    from db_sync_comparator.registries import ANCHORS
+    from db_sync_comparator.sql import build_anchor
+
+    assert ANCHORS["new_committee"] == ("gap_fk", "gov_action_proposal_id")
+    kind, spine, col, _ = build_anchor(ANCHORS["new_committee"])
+    assert (kind, spine, col) == ("idrange", "gov_action_proposal", "gov_action_proposal_id")

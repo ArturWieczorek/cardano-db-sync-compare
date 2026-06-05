@@ -130,4 +130,12 @@ guards against this by comparing only up to the **common boundary minus a margin
 (`--epoch-margin`, default 2 epochs), keeping the comparison in settled territory.
 Don't set the cutoff right at the tip.
 
+For block-anchored tables there is the matching `--block-margin` knob (default 0):
+set it to pull the block cutoff back below the lower tip by roughly the security
+parameter `k` (≈2160 on mainnet) when one database's tip sits in the volatile
+rollback zone. (In the validation run this wasn't the cause of any mismatch —
+the only block-anchored difference, in `tx_out`, was a real pointer-address
+encoding fix at block ~7M, not a near-tip artifact — but the knob is there when
+you do compare close to a tip.)
+
 **Next:** [Case study: the pool-relay port bug →](08-case-study-pool-relay-port.md)
