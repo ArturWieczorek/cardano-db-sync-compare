@@ -1,0 +1,1538 @@
+{
+  "db1_tip": {
+    "block": 13313031,
+    "epoch": 626
+  },
+  "db2_tip": {
+    "block": 13488662,
+    "epoch": 634
+  },
+  "cutoff": {
+    "block": 13313031,
+    "epoch": 624
+  },
+  "block_range": null,
+  "tables_only_db1": [],
+  "tables_only_db2": [],
+  "excluded": {
+    "delisted_pool": "SMASH operator state, not chain-derived",
+    "epoch_sync_time": "wall-clock sync duration per epoch \u2014 non-deterministic",
+    "extra_migrations": "per-instance migration log",
+    "meta": "records this sync's version/start_time \u2014 differs by definition",
+    "off_chain_pool_data": "network-fetched metadata; non-deterministic",
+    "off_chain_pool_fetch_error": "network-fetch failures; non-deterministic",
+    "off_chain_vote_author": "derived from off_chain_vote_data",
+    "off_chain_vote_data": "network-fetched metadata; non-deterministic",
+    "off_chain_vote_drep_data": "derived from off_chain_vote_data",
+    "off_chain_vote_external_update": "derived from off_chain_vote_data",
+    "off_chain_vote_fetch_error": "network-fetch failures; non-deterministic",
+    "off_chain_vote_gov_action_data": "derived from off_chain_vote_data",
+    "off_chain_vote_reference": "derived from off_chain_vote_data",
+    "reserved_pool_ticker": "SMASH operator state, not chain-derived",
+    "reverse_index": "near-tip rollback helper; volatile, id-encoded payload",
+    "schema_version": "per-instance schema bookkeeping"
+  },
+  "results": [
+    {
+      "table": "ada_pots",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 418,
+      "n2": 418,
+      "hash1": [
+        244685794593996526199,
+        231528173182791485490
+      ],
+      "hash2": [
+        244685794593996526199,
+        231528173182791485490
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 1.61,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "block",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 13313208,
+      "n2": 13313208,
+      "hash1": [
+        7674556536165329513853828,
+        7673858606626985461430742
+      ],
+      "hash2": [
+        7674556536165329513853828,
+        7673858606626985461430742
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 141.55,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "collateral_tx_in",
+      "kind": "giant",
+      "status": "MATCH",
+      "n1": 29470129,
+      "n2": 29470129,
+      "hash1": [
+        16991282024416108831464530,
+        16989802598760860177094136
+      ],
+      "hash2": [
+        16991282024416108831464530,
+        16989802598760860177094136
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 3850.05,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "collateral_tx_out",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 13580528,
+      "n2": 13580528,
+      "hash1": [
+        7829702896603088129169941,
+        7827955209077998689775110
+      ],
+      "hash2": [
+        7829702896603088129169941,
+        7827955209077998689775110
+      ],
+      "value1": [
+        "28138571709786181",
+        "857690",
+        "28607360549221"
+      ],
+      "value2": [
+        "28138571709786181",
+        "857690",
+        "28607360549221"
+      ],
+      "note": "",
+      "seconds": 1352.66,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "committee",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 3,
+      "n2": 3,
+      "hash1": [
+        1608357392176982787,
+        1900255582916475873
+      ],
+      "hash2": [
+        1608357392176982787,
+        1900255582916475873
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 0.01,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "committee_de_registration",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 1,
+      "n2": 1,
+      "hash1": [
+        989841879260482460,
+        336005647205783568
+      ],
+      "hash2": [
+        989841879260482460,
+        336005647205783568
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 0.01,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "committee_hash",
+      "kind": "accumulator",
+      "status": "MATCH",
+      "n1": 28,
+      "n2": 28,
+      "hash1": [
+        16087387177697100686,
+        16546282156408493207
+      ],
+      "hash2": [
+        16087387177697100686,
+        16546282156408493207
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 0.0,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "committee_member",
+      "kind": "accumulator",
+      "status": "MATCH",
+      "n1": 31,
+      "n2": 31,
+      "hash1": [
+        17844889880347761483,
+        21185522305823505345
+      ],
+      "hash2": [
+        17844889880347761483,
+        21185522305823505345
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 0.03,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "committee_registration",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 15,
+      "n2": 15,
+      "hash1": [
+        9284858506630522220,
+        8737496317541112084
+      ],
+      "hash2": [
+        9284858506630522220,
+        8737496317541112084
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 0.02,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "constitution",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 4,
+      "n2": 4,
+      "hash1": [
+        2622919988211976768,
+        1552906937506144337
+      ],
+      "hash2": [
+        2622919988211976768,
+        1552906937506144337
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 0.01,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "cost_model",
+      "kind": "accumulator",
+      "status": "COUNT_DIFF",
+      "n1": 8,
+      "n2": 9,
+      "hash1": [
+        4476546518493254907,
+        4811070163743051389
+      ],
+      "hash2": [
+        4623283439939723960,
+        5749048102585450729
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "accumulator table; count delta usually reflects the tip gap (objects first-seen after the cutoff)",
+      "seconds": 0.01,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "datum",
+      "kind": "giant",
+      "status": "MATCH",
+      "n1": 34007902,
+      "n2": 34007902,
+      "hash1": [
+        19606057673265403955033404,
+        19604362743996510124687283
+      ],
+      "hash2": [
+        19606057673265403955033404,
+        19604362743996510124687283
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 1543.35,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "delegation",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 3495913,
+      "n2": 3495913,
+      "hash1": [
+        2015009391057068375402990,
+        2014262078632469681897338
+      ],
+      "hash2": [
+        2015009391057068375402990,
+        2014262078632469681897338
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 1392.13,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "delegation_vote",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 376994,
+      "n2": 376994,
+      "hash1": [
+        217506780368560687856260,
+        217655100174902296453437
+      ],
+      "hash2": [
+        217506780368560687856260,
+        217655100174902296453437
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 170.01,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "drep_distr",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 88693,
+      "n2": 88693,
+      "hash1": [
+        51069695219105877290042,
+        51179608808497419246203
+      ],
+      "hash2": [
+        51069695219105877290042,
+        51179608808497419246203
+      ],
+      "value1": [
+        "1167364858422634762",
+        "0",
+        "8933515129817010"
+      ],
+      "value2": [
+        "1167364858422634762",
+        "0",
+        "8933515129817010"
+      ],
+      "note": "",
+      "seconds": 1.56,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "drep_hash",
+      "kind": "accumulator",
+      "status": "COUNT_DIFF",
+      "n1": 1603,
+      "n2": 1650,
+      "hash1": [
+        909371271084684807415,
+        933303860067915780758
+      ],
+      "hash2": [
+        941367185430905209707,
+        958404201379118632942
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "accumulator table; count delta usually reflects the tip gap (objects first-seen after the cutoff)",
+      "seconds": 0.17,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "drep_registration",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 3297,
+      "n2": 3297,
+      "hash1": [
+        1922563057794608925018,
+        1894397118476826858467
+      ],
+      "hash2": [
+        1922563057794608925018,
+        1894397118476826858467
+      ],
+      "value1": [
+        "506000000000",
+        "-500000000",
+        "500000000"
+      ],
+      "value2": [
+        "506000000000",
+        "-500000000",
+        "500000000"
+      ],
+      "note": "",
+      "seconds": 8.23,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "epoch",
+      "kind": "normal",
+      "status": "HASH_DIFF",
+      "n1": 625,
+      "n2": 625,
+      "hash1": [
+        356057335521114852746,
+        351929120069158380148
+      ],
+      "hash2": [
+        355876850918414769009,
+        351338508158833183705
+      ],
+      "value1": [
+        "42981715232626371453",
+        "2654692166740613",
+        "424616166073756870"
+      ],
+      "value2": [
+        "42981716167384581869",
+        "2654692166740613",
+        "424616166073756870"
+      ],
+      "note": "row counts match but content hash differs",
+      "seconds": 0.15,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": [
+        "epoch_no 596..596: content differs (db1 n=1, db2 n=1)"
+      ]
+    },
+    {
+      "table": "epoch_param",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 419,
+      "n2": 419,
+      "hash1": [
+        236110792575311219683,
+        241276219410906896580
+      ],
+      "hash2": [
+        236110792575311219683,
+        241276219410906896580
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 2.84,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "epoch_stake",
+      "kind": "giant",
+      "status": "COUNT_DIFF",
+      "n1": 450149435,
+      "n2": 440374279,
+      "hash1": [
+        259488170842461523473505736,
+        259494758763271983286290219
+      ],
+      "hash2": [
+        253853119335345867819009327,
+        253859840609163444988686473
+      ],
+      "value1": [
+        "9362906623216497071",
+        "0",
+        "486514766981074"
+      ],
+      "value2": [
+        "9362906623216497071",
+        "1",
+        "486514766981074"
+      ],
+      "note": "row count differs (450149435 vs 440374279)",
+      "seconds": 2378.48,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": [
+        "epoch_no 210..210: row count differs (db1 n=17305, db2 n=17183)",
+        "epoch_no 211..211: row count differs (db1 n=24252, db2 n=23823)",
+        "epoch_no 212..212: row count differs (db1 n=30628, db2 n=29912)",
+        "epoch_no 213..213: row count differs (db1 n=35360, db2 n=34348)",
+        "epoch_no 214..214: row count differs (db1 n=38780, db2 n=37819)",
+        "epoch_no 215..215: row count differs (db1 n=42261, db2 n=41270)",
+        "epoch_no 216..216: row count differs (db1 n=46931, db2 n=45872)",
+        "epoch_no 217..217: row count differs (db1 n=51091, db2 n=49973)"
+      ]
+    },
+    {
+      "table": "epoch_stake_progress",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 416,
+      "n2": 416,
+      "hash1": [
+        241491717588163344052,
+        239902530052735432972
+      ],
+      "hash2": [
+        241491717588163344052,
+        239902530052735432972
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 0.07,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "epoch_state",
+      "kind": "normal",
+      "status": "COUNT_DIFF",
+      "n1": 120,
+      "n2": 118,
+      "hash1": [
+        69795072902163900223,
+        68994344658178219914
+      ],
+      "hash2": [
+        68300081377435133666,
+        67794220662551620640
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "row count differs (120 vs 118)",
+      "seconds": 0.25,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": [
+        "epoch_no 568..568: row count differs (db1 n=2, db2 n=1)",
+        "epoch_no 607..607: row count differs (db1 n=2, db2 n=1)"
+      ]
+    },
+    {
+      "table": "event_info",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 0,
+      "n2": 0,
+      "hash1": [
+        0,
+        0
+      ],
+      "hash2": [
+        0,
+        0
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 0.01,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "extra_key_witness",
+      "kind": "giant",
+      "status": "MATCH",
+      "n1": 36054207,
+      "n2": 36054207,
+      "hash1": [
+        20781814060464883754564373,
+        20784872560725240609913646
+      ],
+      "hash2": [
+        20781814060464883754564373,
+        20784872560725240609913646
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 1331.15,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "gov_action_proposal",
+      "kind": "normal",
+      "status": "HASH_DIFF",
+      "n1": 96,
+      "n2": 96,
+      "hash1": [
+        54461849429161962253,
+        57634237173531457721
+      ],
+      "hash2": [
+        55101044124724878469,
+        58318619369411201939
+      ],
+      "value1": [
+        "9600000000000",
+        "100000000000",
+        "100000000000"
+      ],
+      "value2": [
+        "9600000000000",
+        "100000000000",
+        "100000000000"
+      ],
+      "note": "row counts match but content hash differs",
+      "seconds": 0.94,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": [
+        "block_no 13170021..13171646: content differs (db1 n=1, db2 n=1)",
+        "block_no 13222025..13223650: content differs (db1 n=1, db2 n=1)",
+        "block_no 13269154..13270778: content differs (db1 n=1, db2 n=1)"
+      ]
+    },
+    {
+      "table": "ma_tx_mint",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 18809625,
+      "n2": 18809625,
+      "hash1": [
+        10844072166963117445389823,
+        10843413638504370369490689
+      ],
+      "hash2": [
+        10844072166963117445389823,
+        10843413638504370369490689
+      ],
+      "value1": [
+        "52251829310282824363590",
+        "-9223372036854775807",
+        "9223372036854775807"
+      ],
+      "value2": [
+        "52251829310282824363590",
+        "-9223372036854775807",
+        "9223372036854775807"
+      ],
+      "note": "",
+      "seconds": 193.41,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "ma_tx_out",
+      "kind": "giant",
+      "status": "MATCH",
+      "n1": 1123883162,
+      "n2": 1123883162,
+      "hash1": [
+        645824693360116068376489190,
+        646537261382786208551829937
+      ],
+      "hash2": [
+        645824693360116068376489190,
+        646537261382786208551829937
+      ],
+      "value1": [
+        "35034820159117682771741787",
+        "1",
+        "18000000000000000000"
+      ],
+      "value2": [
+        "35034820159117682771741787",
+        "1",
+        "18000000000000000000"
+      ],
+      "note": "",
+      "seconds": 8221.64,
+      "skipped_cols": [
+        "tx_out.tx_id->tx (depth>1)",
+        "tx_out_id->tx_out"
+      ],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "multi_asset",
+      "kind": "accumulator",
+      "status": "COUNT_DIFF",
+      "n1": 11108713,
+      "n2": 11128803,
+      "hash1": [
+        6405304156820338745695181,
+        6403414854733177518412041
+      ],
+      "hash2": [
+        6416964482454983906027825,
+        6415025787655182916212163
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "accumulator table; count delta usually reflects the tip gap (objects first-seen after the cutoff)",
+      "seconds": 67.49,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "new_committee",
+      "kind": "normal",
+      "status": "ERROR",
+      "n1": 0,
+      "n2": 0,
+      "hash1": [
+        0,
+        0
+      ],
+      "hash2": [
+        0,
+        0
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "UndefinedColumn: column t0.epoch_no does not exist\nLINE 6:   WHERE t0.\"epoch_no\" <= 624\n                ^",
+      "seconds": 0.02,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "param_proposal",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 404,
+      "n2": 404,
+      "hash1": [
+        238866942865743018892,
+        228116907143997389057
+      ],
+      "hash2": [
+        238866942865743018892,
+        228116907143997389057
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 0.45,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "pool_hash",
+      "kind": "accumulator",
+      "status": "COUNT_DIFF",
+      "n1": 6123,
+      "n2": 6136,
+      "hash1": [
+        3509669318532208832685,
+        3528001295658637034265
+      ],
+      "hash2": [
+        3517776023522050252756,
+        3535125936636649535575
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "accumulator table; count delta usually reflects the tip gap (objects first-seen after the cutoff)",
+      "seconds": 0.16,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "pool_metadata_ref",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 36527,
+      "n2": 36527,
+      "hash1": [
+        21070458164183014274622,
+        20908129010684490675392
+      ],
+      "hash2": [
+        21070458164183014274622,
+        20908129010684490675392
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 14.54,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "pool_owner",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 44637,
+      "n2": 44637,
+      "hash1": [
+        25687670712409452674157,
+        25823384438357984377238
+      ],
+      "hash2": [
+        25687670712409452674157,
+        25823384438357984377238
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 13.55,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "pool_relay",
+      "kind": "normal",
+      "status": "HASH_DIFF",
+      "n1": 72514,
+      "n2": 72514,
+      "hash1": [
+        41795905858810458342227,
+        41656985360174942634565
+      ],
+      "hash2": [
+        41786998569629216701770,
+        41637311421310874487609
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "row counts match but content hash differs",
+      "seconds": 0.85,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": [
+        "block_no 4490224..4491848: content differs (db1 n=681, db2 n=681)",
+        "block_no 4496724..4498348: content differs (db1 n=143, db2 n=143)",
+        "block_no 4499975..4501599: content differs (db1 n=110, db2 n=110)",
+        "block_no 4501600..4503224: content differs (db1 n=156, db2 n=156)",
+        "block_no 4503225..4504849: content differs (db1 n=102, db2 n=102)",
+        "block_no 4512976..4514600: content differs (db1 n=157, db2 n=157)",
+        "block_no 4516226..4517850: content differs (db1 n=83, db2 n=83)",
+        "block_no 4517851..4519475: content differs (db1 n=75, db2 n=75)"
+      ]
+    },
+    {
+      "table": "pool_retire",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 3434,
+      "n2": 3434,
+      "hash1": [
+        1955941990685223607921,
+        1983338881884440753035
+      ],
+      "hash2": [
+        1955941990685223607921,
+        1983338881884440753035
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 2.27,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "pool_stat",
+      "kind": "normal",
+      "status": "COUNT_DIFF",
+      "n1": 0,
+      "n2": 1134346,
+      "hash1": [
+        0,
+        0
+      ],
+      "hash2": [
+        654589656917078593203646,
+        654461214370348522989091
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "row count differs (0 vs 1134346)",
+      "seconds": 1.71,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": [
+        "epoch_no 209..209: row count differs (db1 n=0, db2 n=721)",
+        "epoch_no 210..210: row count differs (db1 n=0, db2 n=882)",
+        "epoch_no 211..211: row count differs (db1 n=0, db2 n=976)",
+        "epoch_no 212..212: row count differs (db1 n=0, db2 n=1017)",
+        "epoch_no 213..213: row count differs (db1 n=0, db2 n=1058)",
+        "epoch_no 214..214: row count differs (db1 n=0, db2 n=1095)",
+        "epoch_no 215..215: row count differs (db1 n=0, db2 n=1107)",
+        "epoch_no 216..216: row count differs (db1 n=0, db2 n=1119)"
+      ]
+    },
+    {
+      "table": "pool_update",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 36739,
+      "n2": 36739,
+      "hash1": [
+        21138998112484509239497,
+        21149175910712058543343
+      ],
+      "hash2": [
+        21138998112484509239497,
+        21149175910712058543343
+      ],
+      "value1": [
+        "3089500000000",
+        "500000000",
+        "500000000"
+      ],
+      "value2": [
+        "3089500000000",
+        "500000000",
+        "500000000"
+      ],
+      "note": "",
+      "seconds": 3.65,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "pot_transfer",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 0,
+      "n2": 0,
+      "hash1": [
+        0,
+        0
+      ],
+      "hash2": [
+        0,
+        0
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 0.01,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "redeemer",
+      "kind": "giant",
+      "status": "MATCH",
+      "n1": 57533571,
+      "n2": 57533571,
+      "hash1": [
+        33163764986451670684359792,
+        33165162833943090096609754
+      ],
+      "hash2": [
+        33163764986451670684359792,
+        33165162833943090096609754
+      ],
+      "value1": [
+        "5972980824924",
+        "34",
+        "1673050"
+      ],
+      "value2": [
+        "5972980824924",
+        "34",
+        "1673050"
+      ],
+      "note": "",
+      "seconds": 887.42,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "redeemer_data",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 1768868,
+      "n2": 1768868,
+      "hash1": [
+        1019802810428992087045179,
+        1019372274806013791134140
+      ],
+      "hash2": [
+        1019802810428992087045179,
+        1019372274806013791134140
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 1137.52,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "reference_tx_in",
+      "kind": "giant",
+      "status": "MATCH",
+      "n1": 30940090,
+      "n2": 30940090,
+      "hash1": [
+        17837535091936756317957648,
+        17833423649898232463872036
+      ],
+      "hash2": [
+        17837535091936756317957648,
+        17833423649898232463872036
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 1228.83,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "reserve",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 86918,
+      "n2": 86918,
+      "hash1": [
+        50001589432749395630629,
+        50033042788518832959383
+      ],
+      "hash2": [
+        50001589432749395630629,
+        50033042788518832959383
+      ],
+      "value1": [
+        "913108184758969",
+        "73",
+        "66000000000000"
+      ],
+      "value2": [
+        "913108184758969",
+        "73",
+        "66000000000000"
+      ],
+      "note": "",
+      "seconds": 6.4,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "reward",
+      "kind": "giant",
+      "status": "MATCH",
+      "n1": 415153735,
+      "n2": 415153735,
+      "hash1": [
+        239312257155971344067305022,
+        239344138313833127441731514
+      ],
+      "hash2": [
+        239312257155971344067305022,
+        239344138313833127441731514
+      ],
+      "value1": [
+        "4579105504394290",
+        "0",
+        "164063324237"
+      ],
+      "value2": [
+        "4579105504394290",
+        "0",
+        "164063324237"
+      ],
+      "note": "",
+      "seconds": 3052.71,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "reward_rest",
+      "kind": "giant",
+      "status": "MATCH",
+      "n1": 176576,
+      "n2": 176576,
+      "hash1": [
+        101996733852868889119874,
+        101973489907248643328723
+      ],
+      "hash2": [
+        101996733852868889119874,
+        101973489907248643328723
+      ],
+      "value1": [
+        "1639249372501635",
+        "73",
+        "102140000000000"
+      ],
+      "value2": [
+        "1639249372501635",
+        "73",
+        "102140000000000"
+      ],
+      "note": "",
+      "seconds": 10.09,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "script",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 315449,
+      "n2": 315449,
+      "hash1": [
+        181968244009114794750263,
+        181915944973651430548446
+      ],
+      "hash2": [
+        181968244009114794750263,
+        181915944973651430548446
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 97.93,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "slot_leader",
+      "kind": "accumulator",
+      "status": "COUNT_DIFF",
+      "n1": 3372,
+      "n2": 3379,
+      "hash1": [
+        1933271452126823170986,
+        1925465622998975810575
+      ],
+      "hash2": [
+        1937860182619345319061,
+        1929103129094285254789
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "accumulator table; count delta usually reflects the tip gap (objects first-seen after the cutoff)",
+      "seconds": 0.1,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "stake_address",
+      "kind": "accumulator",
+      "status": "COUNT_DIFF",
+      "n1": 5828058,
+      "n2": 5857049,
+      "hash1": [
+        3357890738109852960794657,
+        3360273928781976769411788
+      ],
+      "hash2": [
+        3374618238816799058536389,
+        3377024203377120560913742
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "accumulator table; count delta usually reflects the tip gap (objects first-seen after the cutoff)",
+      "seconds": 15.77,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "stake_deregistration",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 612992,
+      "n2": 612992,
+      "hash1": [
+        352984564556733269944829,
+        353501071525574183768160
+      ],
+      "hash2": [
+        352984564556733269944829,
+        353501071525574183768160
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 146.34,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "stake_registration",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 2087047,
+      "n2": 2087047,
+      "hash1": [
+        1203330112685025377412038,
+        1202926894026767199590387
+      ],
+      "hash2": [
+        1203330112685025377412038,
+        1202926894026767199590387
+      ],
+      "value1": [
+        "4174094000000",
+        "2000000",
+        "2000000"
+      ],
+      "value2": [
+        "4174094000000",
+        "2000000",
+        "2000000"
+      ],
+      "note": "",
+      "seconds": 967.56,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "treasury",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 121700,
+      "n2": 121700,
+      "hash1": [
+        70197890819687474399909,
+        70167623571058264745972
+      ],
+      "hash2": [
+        70197890819687474399909,
+        70167623571058264745972
+      ],
+      "value1": [
+        "302274841720892",
+        "238",
+        "102140000000000"
+      ],
+      "value2": [
+        "302274841720892",
+        "238",
+        "102140000000000"
+      ],
+      "note": "",
+      "seconds": 22.46,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "treasury_withdrawal",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 60,
+      "n2": 60,
+      "hash1": [
+        34978013732098395582,
+        32534926849633397241
+      ],
+      "hash2": [
+        34978013732098395582,
+        32534926849633397241
+      ],
+      "value1": [
+        "448135765000000",
+        "5000000",
+        "96817080000000"
+      ],
+      "value2": [
+        "448135765000000",
+        "5000000",
+        "96817080000000"
+      ],
+      "note": "",
+      "seconds": 0.04,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "tx",
+      "kind": "giant",
+      "status": "MATCH",
+      "n1": 120243441,
+      "n2": 120243441,
+      "hash1": [
+        69314623602268878655945512,
+        69313216330707912605137514
+      ],
+      "hash2": [
+        69314623602268878655945512,
+        69313216330707912605137514
+      ],
+      "value1": [
+        "38274859502892",
+        "0",
+        "44869166536"
+      ],
+      "value2": [
+        "38274859502892",
+        "0",
+        "44869166536"
+      ],
+      "note": "",
+      "seconds": 1058.49,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "tx_cbor",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 0,
+      "n2": 0,
+      "hash1": [
+        0,
+        0
+      ],
+      "hash2": [
+        0,
+        0
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 0.05,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "tx_in",
+      "kind": "giant",
+      "status": "MATCH",
+      "n1": 334791414,
+      "n2": 334791414,
+      "hash1": [
+        192993007563372454547853347,
+        192983259090370753755308595
+      ],
+      "hash2": [
+        192993007563372454547853347,
+        192983259090370753755308595
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 6498.85,
+      "skipped_cols": [
+        "redeemer.tx_id->tx (depth>1)",
+        "redeemer_id->redeemer"
+      ],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "tx_metadata",
+      "kind": "giant",
+      "status": "MATCH",
+      "n1": 136431432,
+      "n2": 136431432,
+      "hash1": [
+        78644457313379604331860212,
+        78650547253172418719274479
+      ],
+      "hash2": [
+        78644457313379604331860212,
+        78650547253172418719274479
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 2522.09,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "tx_out",
+      "kind": "giant",
+      "status": "HASH_DIFF",
+      "n1": 345996649,
+      "n2": 345996649,
+      "hash1": [
+        199461413998647999502545450,
+        199439767497372534148941864
+      ],
+      "hash2": [
+        199461430818033361809788568,
+        199439814881068353157613739
+      ],
+      "value1": [
+        "43053774570068296769",
+        "0",
+        "2846991204291506"
+      ],
+      "value2": [
+        "43053774570068296769",
+        "0",
+        "2846991204291506"
+      ],
+      "note": "row counts match but content hash differs",
+      "seconds": 5363.4,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": [
+        "block_no 5566058..5567682: content differs (db1 n=25431, db2 n=25431)",
+        "block_no 5684692..5686316: content differs (db1 n=40220, db2 n=40220)",
+        "block_no 6583386..6585010: content differs (db1 n=116179, db2 n=116179)",
+        "block_no 6984793..6986417: content differs (db1 n=166058, db2 n=166058)",
+        "block_no 6986418..6988042: content differs (db1 n=149166, db2 n=149166)",
+        "block_no 6988043..6989667: content differs (db1 n=132171, db2 n=132171)",
+        "block_no 6989668..6991292: content differs (db1 n=91198, db2 n=91198)",
+        "block_no 6991293..6992917: content differs (db1 n=135730, db2 n=135730)"
+      ]
+    },
+    {
+      "table": "voting_anchor",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 7723,
+      "n2": 7723,
+      "hash1": [
+        4458294833474473631019,
+        4451886786435996848440
+      ],
+      "hash2": [
+        4458294833474473631019,
+        4451886786435996848440
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 54.13,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "voting_procedure",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 23601,
+      "n2": 23601,
+      "hash1": [
+        13630762925456317552516,
+        13569871293599706311900
+      ],
+      "hash2": [
+        13630762925456317552516,
+        13569871293599706311900
+      ],
+      "value1": null,
+      "value2": null,
+      "note": "",
+      "seconds": 70.95,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    },
+    {
+      "table": "withdrawal",
+      "kind": "normal",
+      "status": "MATCH",
+      "n1": 11596065,
+      "n2": 11596065,
+      "hash1": [
+        6685037899371811634987974,
+        6685509450168524743579801
+      ],
+      "hash2": [
+        6685037899371811634987974,
+        6685509450168524743579801
+      ],
+      "value1": [
+        "5443983955866795",
+        "0",
+        "168438176000000"
+      ],
+      "value2": [
+        "5443983955866795",
+        "0",
+        "168438176000000"
+      ],
+      "note": "",
+      "seconds": 1490.19,
+      "skipped_cols": [],
+      "schema_drift": {},
+      "localized": []
+    }
+  ]
+}

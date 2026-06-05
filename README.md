@@ -264,6 +264,12 @@ cleanup (migration 0047) — plus the previously-unreported `pool_relay.port`
 regression above. The rest were expected config/tip differences. Full root-cause
 writeup: [benchmarks/INVESTIGATION-13.6.0.5-vs-13.7.1.0.md](benchmarks/INVESTIGATION-13.6.0.5-vs-13.7.1.0.md).
 
+**Measured full run:** the complete comparison (tiered, `--workers 6`) took
+**9h 42m** — dominated by the billion-row giants: `ma_tx_out` 2h17m (1.12B rows),
+`tx_in` 1h48m, `tx_out` 1h29m (+ its Phase-2 localization), `collateral_tx_in`
+1h04m, `reward` 51m. The raw report and per-table timings are committed under
+[`benchmarks/`](benchmarks/) (`mainnet-full-2026-06-05.{json,log,SUMMARY.md}`).
+
 ---
 
 ## Running on mainnet (operational guide)
