@@ -80,6 +80,45 @@ For a **full mainnet run**, the giants (`ma_tx_out` 1.1B, `epoch_stake`/`reward`
 `--full`. Tune with `--workers` and `--work-mem`, and validate on a
 `--block-range` slice first.
 
+## Resource usage on a full mainnet run (measured)
+
+The comparison is **read-only on the data** — it never writes to either database,
+so it can't corrupt them or grow them permanently. But a full run is heavy in
+three ways, and one of them surprises people:
+
+- **Temporary disk — large and fluctuating.** Translating foreign keys to natural
+  keys hash-joins the giant tables against `tx`/`datum`/`stake_address`. When a
+  join's hash table exceeds `work_mem`, PostgreSQL spills it to **temp files**
+  under `base/pgsql_tmp`. On a real run this generated **hundreds of GB of temp
+  I/O cumulatively** — measured via `pg_stat_database.temp_bytes`, ~478 GB on one
+  database and ~255 GB on the other — with **tens of GB live at peak**. Because
+  each query's temp is created during the scan and released when it finishes,
+  **free disk space visibly rises and falls** throughout the run. This is the
+  usual cause of "why is my disk fluctuating?". Mitigate by keeping ample free
+  space (tens of GB; more with more `--workers` or `--full`), capping it with
+  PostgreSQL's `temp_file_limit`, or moving it off the data disk via a dedicated
+  `temp_tablespaces`.
+- **RAM is mostly server-side.** The client process is tiny (~10–40 MB; the run
+  measured ~11 MB resident) because all the work happens inside PostgreSQL. The
+  server's peak is roughly `workers × (concurrent hash/sort ops) × work_mem`, plus
+  `shared_buffers`, plus OS page cache for the scans. Raising `--work-mem` cuts
+  temp-disk spill at the cost of RAM; the two trade off directly.
+- **CPU + disk read bandwidth.** Sustained sequential reads of the whole ~500 GB
+  plus `md5` across cores — expect the run to saturate disk reads.
+
+Quick way to see the temp pressure yourself, during or after a run:
+
+```sql
+SELECT datname, temp_files, pg_size_pretty(temp_bytes)
+FROM pg_stat_database WHERE datname LIKE 'mainnet%';
+```
+
+**Rule of thumb:** tight on disk → raise `--work-mem`, lower `--workers`; tight on
+RAM → keep `--work-mem` modest, lower `--workers` (and make sure there's temp
+disk); plenty of both → more `--workers` for speed. Avoid `--full` on mainnet
+unless you have the disk and the hours — it deep-joins the 1.1B-row `ma_tx_out`
+and multiplies temp usage.
+
 ## The honest caveat: the near-tip rollback zone
 
 The id-range window ([how it works, idea 3](03-how-it-works.md)) assumes row

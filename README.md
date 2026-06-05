@@ -138,6 +138,81 @@ and that one was a real bug:
 
 ---
 
+## Running on mainnet (operational guide)
+
+A full mainnet comparison runs for **hours** and leans on the database server
+hard. Lessons from a real 500 GB run:
+
+**Run it independently of your shell and of any agent/automation.** It's a
+long-lived batch job — don't tie its lifetime to an interactive session.
+
+```bash
+# detached, survives logout/disconnect; unbuffered so the log streams live
+nohup python -u -m db_sync_comparator \
+  --db1 "dbname=mainnet_v1 host=/var/run/postgresql" \
+  --db2 "dbname=mainnet_v2 host=/var/run/postgresql" \
+  --workers 6 --json report.json > run.log 2>&1 &
+
+tail -f run.log          # watch per-table OK/!! lines + seconds (compute ETA)
+```
+
+- **Report progress to files**, not just the terminal: `-u` (unbuffered) + a
+  redirected `run.log`, plus `--json report.json` for the machine-readable
+  result. The per-table lines are your progress bar and your post-mortem.
+- **Don't set a short `--statement-timeout`** (default `0` = none). Individual
+  giant-table scans can take **30–60+ min**; a timeout would abort them and fail
+  the run for no good reason.
+- **Decouple "is it done?" from the job.** If a watcher/notifier needs to survive
+  your session, it must itself be detached (`nohup`/`tmux`/`systemd-run`) and
+  communicate via files — a process tied to your shell dies on logout. A robust
+  pattern is: the detached runner writes `run.log`/`report.json`, and a second
+  detached one-liner waits for the run to finish (`until grep -q done … ; do
+  sleep 60; done`) and copies the results somewhere stable.
+- **It does not modify the databases** — every query is read-only, so a crash or
+  a kill can't corrupt or shrink either DB. Safe to stop and re-run.
+- Re-run from a clean checkout with `--plan` first to confirm **0 unmapped FKs**
+  against the current schema (see [Source of truth](#source-of-truth-for-the-schema)).
+
+## Hardware & resource requirements
+
+Read-only on the *data*, but **not** free on resources. The one that surprises
+people (and makes free disk space visibly fluctuate during the run):
+
+- **Disk — large *temporary* files (the important one).** Translating foreign
+  keys to natural keys hash-joins the giant tables (`ma_tx_out`, `tx_out`,
+  `tx_in`, …) against `tx`/`datum`/`stake_address`. When a join's hash table
+  exceeds `work_mem` it **spills to PostgreSQL temp files** (`base/pgsql_tmp`).
+  On the validation run this produced **hundreds of GB of temp I/O cumulatively**
+  (~478 GB on one DB, ~255 GB on the other) with **tens of GB live at peak** — so
+  **free disk space rises and falls** as each big query spills and then releases.
+  It's transient (nothing is written to the databases themselves), but you need
+  **ample free disk headroom**: budget tens of GB free, more with more `--workers`
+  or with `--full`. You can hard-cap it with PostgreSQL's `temp_file_limit`, or
+  move it off the data disk with a dedicated `temp_tablespaces`.
+- **RAM.** The client (this tool) is tiny — ~10–40 MB; *all* the heavy work runs
+  inside PostgreSQL. The real RAM cost is server-side and roughly
+  `workers × (concurrent hash/sort operations) × work_mem`, plus `shared_buffers`,
+  plus OS page cache used while scanning ~500 GB. At `--workers 6 --work-mem 256MB`
+  that's a few GB of `work_mem` at peak. Raising `--work-mem` trades RAM for less
+  temp-disk spill.
+- **CPU / disk IO.** Sustained sequential reads of the whole ~500 GB plus `md5`
+  hashing across cores; expect it to saturate disk read bandwidth. Run it when the
+  box can spare the IO.
+
+**Tuning the disk ↔ RAM tradeoff:**
+
+| You have… | Do this | Effect |
+|---|---|---|
+| tight disk | raise `--work-mem` (e.g. `1GB`) and/or lower `--workers` | less temp spill, more RAM, maybe slower |
+| tight RAM | keep `--work-mem` modest, lower `--workers` | more temp spill (need disk), gentler on RAM |
+| plenty of both | more `--workers` | faster wall-clock, more concurrent temp + RAM |
+
+Avoid `--full` on mainnet unless you have the disk and time — it deep-joins the
+1.1B-row `ma_tx_out` and multiplies temp usage. More detail and measured numbers
+are in [docs/07-performance-and-scaling.md](docs/07-performance-and-scaling.md).
+
+---
+
 ## Development
 
 ```bash

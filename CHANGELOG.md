@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provided by pytest-postgresql locally or a service container in CI
   (`DBSYNC_COMPARE_PG_EXTERNAL`). Run with `make test-db`. The default `make test`
   stays DB-free.
+- **README operational guide + hardware/resource notes.** How to run a full
+  mainnet comparison in practice: detached from your shell/session, progress
+  streamed to files (`-u` + `run.log`, `--json`), no short `--statement-timeout`,
+  and `--workers`/`--work-mem` tuning. Plus a hardware section: the run is
+  read-only on the data but FK-translation hash joins **spill hundreds of GB of
+  PostgreSQL temp files** (measured ~478 GB / ~255 GB cumulative on the two
+  mainnet DBs), which is why free disk space fluctuates; client RAM is negligible
+  (~10–40 MB). Expanded resource detail in `docs/07-performance-and-scaling.md`.
 
 ## [0.1.0] — 2026-06-05
 
