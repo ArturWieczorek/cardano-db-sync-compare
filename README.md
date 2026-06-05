@@ -156,18 +156,35 @@ nohup python -u -m db_sync_comparator \
 tail -f run.log          # watch per-table OK/!! lines + seconds (compute ETA)
 ```
 
-- **Report progress to files**, not just the terminal: `-u` (unbuffered) + a
-  redirected `run.log`, plus `--json report.json` for the machine-readable
-  result. The per-table lines are your progress bar and your post-mortem.
+**Exactly one process needs `nohup`: the comparison command above**
+(`python -u -m db_sync_comparator …`, equivalently `db-sync-compare …`).
+Everything else is optional. It produces two files you will use:
+
+| File | When written | What to check it for |
+|------|--------------|----------------------|
+| `run.log` (stdout, `-u`) | live, line by line | **progress** — one `OK`/`!!` line + seconds per table; the final **`SUMMARY:`** line (counts of match / discrepancies / accumulator deltas / errors); the **`DISCREPANCIES:`** and **`ERRORS:`** blocks; and the wrapper's **`FINISHED rc=… WALL_SECONDS=…`** line (exit code + total wall-clock) |
+| `report.json` (`--json`) | once, at the very end | the **machine-readable result** — per-table `status`, row counts, the two set-hashes, `seconds`, `localized` windows, `skipped_cols`. This is what you archive, diff between runs, or feed to CI |
+
+When it finishes, triage in three commands:
+
+```bash
+grep -E '^SUMMARY|^FINISHED' run.log          # verdict + total wall-clock
+grep -E '^  !! |DISCREPANC|ERROR' run.log      # everything that did NOT match
+# exit code: 0 = content-equivalent, 1 = discrepancy/error found, 2 = couldn't run
+```
+
+Other lessons:
+
 - **Don't set a short `--statement-timeout`** (default `0` = none). Individual
   giant-table scans can take **30–60+ min**; a timeout would abort them and fail
   the run for no good reason.
-- **Decouple "is it done?" from the job.** If a watcher/notifier needs to survive
-  your session, it must itself be detached (`nohup`/`tmux`/`systemd-run`) and
-  communicate via files — a process tied to your shell dies on logout. A robust
-  pattern is: the detached runner writes `run.log`/`report.json`, and a second
-  detached one-liner waits for the run to finish (`until grep -q done … ; do
-  sleep 60; done`) and copies the results somewhere stable.
+- **A notifier must be detached too.** The comparison is the only thing that
+  *must* be `nohup`'d; but if you also want a "tell me when it's done" watcher, it
+  has to be detached as well (`nohup`/`tmux`/`systemd-run`) and communicate via
+  files — a process tied to your shell dies on logout. Pattern: the runner writes
+  `run.log`/`report.json`; a second detached one-liner waits
+  (`until grep -q '^FINISHED' run.log; do sleep 60; done`) and then copies the
+  results somewhere stable.
 - **It does not modify the databases** — every query is read-only, so a crash or
   a kill can't corrupt or shrink either DB. Safe to stop and re-run.
 - Re-run from a clean checkout with `--plan` first to confirm **0 unmapped FKs**
@@ -195,6 +212,16 @@ people (and makes free disk space visibly fluctuate during the run):
   plus OS page cache used while scanning ~500 GB. At `--workers 6 --work-mem 256MB`
   that's a few GB of `work_mem` at peak. Raising `--work-mem` trades RAM for less
   temp-disk spill.
+- **Swap — not the lever here, just a safety net.** PostgreSQL does **not** page
+  `work_mem` out to OS swap: when a hash/sort exceeds `work_mem` it spills to
+  **temp files on disk** (the point above), not to swap. So adding swap won't make
+  the run faster or absorb that temp pressure — the real levers are `--work-mem`,
+  `--workers`, and free **temp disk**. Keep only a **small** swap (≈2–8 GB, or up
+  to ~1× RAM capped around 8–16 GB) purely as an OOM cushion in case you over-size
+  `--work-mem × --workers`, and set `vm.swappiness` **low** (1–10) so the kernel
+  doesn't evict the page cache / PostgreSQL into swap and thrash the scans. If you
+  find the box actually swapping during a run, that's a signal to *lower*
+  `--work-mem`/`--workers`, not to add more swap.
 - **CPU / disk IO.** Sustained sequential reads of the whole ~500 GB plus `md5`
   hashing across cores; expect it to saturate disk read bandwidth. Run it when the
   box can spare the IO.
