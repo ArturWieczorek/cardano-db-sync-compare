@@ -19,7 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the `address` table could not be subset-checked by
   `--verify-accumulators`. The fix is additive and Core-variant-safe: neither the
   column nor the table exists in the Core layout, so the new entries are simply
-  never consulted there.
+  never consulted there. Covered end-to-end by a dedicated Address-variant
+  fixture (a second pair of synthetic databases with an `address` table and
+  `tx_out.address_id`) that proves `address_id` is translated, a corrupted
+  address surfaces as a `tx_out` `HASH_DIFF`, and the `address` table is
+  subset-checkable by `--verify-accumulators`.
 - **Reports now identify the databases they compared.** The run header prints
   `DB1: <name>` / `DB2: <name>` (instead of an anonymous `DB1 tip:`), and the
   `--json` report carries top-level `db1` / `db2` fields. The label is the

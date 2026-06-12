@@ -111,6 +111,23 @@ That port-overflow test reproduces the **real regression** this tool found on
 mainnet (see the [case study](08-case-study-pool-relay-port.md)) - so we'd catch
 it again if it ever came back.
 
+### The Address-variant fixture
+
+The baseline pair above is the **Core** TxOut layout (the address is an inline
+`tx_out.address` column). A **second** pair of fixture databases exercises the
+**Address** layout (`use_address_table`), where the address lives in a separate,
+deduplicated `address` table and `tx_out` points at it via `address_id`. Same
+id-drift and tip-gap baseline, plus:
+
+| Test | Fault injected into DB2 | Expected verdict |
+|------|-------------------------|------------------|
+| baseline (`tx_out`) | none | `MATCH` - `address_id` translated to `address.raw`, not dropped |
+| corrupted address | change one `address.raw` | `tx_out` `HASH_DIFF` (proves the per-output address is compared) |
+| extra address | insert an `address` row | `--verify-accumulators` reports a clean superset (`only_db1=0`) |
+
+The corrupted-address test is the key guard: before `address_id` was mapped it
+was flagged `UNMAPPED` and dropped, so this corruption would have been invisible.
+
 ### How to run them
 
 ```bash

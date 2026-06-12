@@ -343,3 +343,136 @@ def test_accumulator_count_delta_is_informational(two_dbs):
     plan, result, _ = _compare_one(c1, c2, "multi_asset")
     assert plan.kind == "accumulator"
     assert result.status == "COUNT_DIFF"  # treated as informational by the reporter, not a hard failure
+
+
+# --------------------------------------------------------------------------- #
+# Address (use_address_table) variant fixtures + tests
+#
+# In the Address variant the output address is not inline on tx_out; it lives in
+# a separate, deduplicated `address` table that tx_out points at via address_id.
+# These tests prove end-to-end that the tool (a) translates address_id to the
+# address's natural key so the per-output address is actually compared, and
+# (b) treats the address table as a subset-checkable accumulator. They reuse the
+# session's PostgreSQL (pg_params) but build their own pair of databases.
+# --------------------------------------------------------------------------- #
+
+_DDL_ADDR = [
+    "CREATE TABLE block (id bigint PRIMARY KEY, hash bytea, block_no int, epoch_no int, slot_no bigint)",
+    "CREATE TABLE tx (id bigint PRIMARY KEY, hash bytea, block_id bigint)",
+    'CREATE TABLE tx_out (id bigint PRIMARY KEY, tx_id bigint, "index" int, value numeric, address_id bigint)',
+    "CREATE TABLE address (id bigint PRIMARY KEY, address text, raw bytea, has_script boolean, "
+    "payment_cred bytea, stake_address_id bigint)",
+    "CREATE TABLE stake_address (id bigint PRIMARY KEY, hash_raw bytea, view text)",
+    # Spine tables compute_spine_ranges always probes; left empty here.
+    "CREATE TABLE pool_update (id bigint PRIMARY KEY, hash_id bigint, registered_tx_id bigint, cert_index int)",
+    "CREATE TABLE gov_action_proposal (id bigint PRIMARY KEY, tx_id bigint, index int)",
+    "CREATE TABLE meta (id bigint PRIMARY KEY, version text)",
+]
+
+_ALL_TABLES_ADDR = "block, tx, tx_out, address, stake_address, pool_update, gov_action_proposal, meta"
+
+
+def _seed_data_addr(conn, off: int, extra_tip: bool, version: str) -> None:
+    """Address-variant seed: same logical content with every id (and FK) shifted
+    by ``off`` (drift), and ``extra_tip`` adding one block beyond the cutoff. The
+    output address lives in the `address` table; tx_out references it by id."""
+    blocks = range(0, 7 if extra_tip else 6)  # block_no 0..5 (+6 for the ahead DB)
+    txs = range(1, 7 if extra_tip else 6)
+
+    conn.execute("INSERT INTO stake_address VALUES (%s, decode(md5('stake-1'),'hex'), 'stake1xyz')", (1 + off,))
+    # Three distinct addresses; addr0 carries a stake part, the others don't.
+    for k in (0, 1, 2):
+        conn.execute(
+            "INSERT INTO address VALUES (%s, %s, decode(md5(%s),'hex'), false, NULL, %s)",
+            (k + 1 + off, f"addr{k}", f"addr{k}", (1 + off) if k == 0 else None),
+        )
+    for bn in blocks:
+        conn.execute(
+            "INSERT INTO block VALUES (%s, decode(md5(%s),'hex'), %s, 0, %s)",
+            (bn + 1 + off, f"block-{bn}", bn, bn),
+        )
+    for t in txs:
+        conn.execute(
+            "INSERT INTO tx VALUES (%s, decode(md5(%s),'hex'), %s)",
+            (t + off, f"tx-{t}", t + 1 + off),
+        )
+        for o in (0, 1):
+            conn.execute(
+                "INSERT INTO tx_out VALUES (%s, %s, %s, %s, %s)",
+                ((t - 1) * 2 + o + 1 + off, t + off, o, 1000 * t + o, ((t + o) % 3) + 1 + off),
+            )
+    conn.execute("INSERT INTO meta VALUES (%s, %s)", (1 + off, version))
+
+
+@pytest.fixture(scope="session")
+def _db_dsns_addr(pg_params):
+    """Two empty Address-variant databases with the schema, created once."""
+    n1, n2 = "dbsync_cmp_addr_v1", "dbsync_cmp_addr_v2"
+    admin = psycopg.connect(_conninfo(pg_params, "postgres"), autocommit=True)
+    for n in (n1, n2):
+        admin.execute(f'DROP DATABASE IF EXISTS "{n}" WITH (FORCE)')
+        admin.execute(f'CREATE DATABASE "{n}"')
+    dsn1, dsn2 = _conninfo(pg_params, n1), _conninfo(pg_params, n2)
+    for dsn in (dsn1, dsn2):
+        with psycopg.connect(dsn, autocommit=True) as c:
+            for ddl in _DDL_ADDR:
+                c.execute(ddl)
+    try:
+        yield dsn1, dsn2
+    finally:
+        for n in (n1, n2):
+            admin.execute(f'DROP DATABASE IF EXISTS "{n}" WITH (FORCE)')
+        admin.close()
+
+
+@pytest.fixture
+def two_dbs_addr(_db_dsns_addr):
+    """Reset to a clean, matching Address-variant baseline (DB2 drifted + a tip
+    block ahead) and yield two open connections."""
+    dsn1, dsn2 = _db_dsns_addr
+    c1 = psycopg.connect(dsn1, autocommit=True)
+    c2 = psycopg.connect(dsn2, autocommit=True)
+    for c in (c1, c2):
+        c.execute(f"TRUNCATE {_ALL_TABLES_ADDR}")
+    _seed_data_addr(c1, off=0, extra_tip=False, version="v1")
+    _seed_data_addr(c2, off=100, extra_tip=True, version="v2")
+    try:
+        yield c1, c2
+    finally:
+        c1.close()
+        c2.close()
+
+
+def test_address_variant_txout_matches_despite_id_drift(two_dbs_addr):
+    # tx_out.address_id differs between the DBs (id drift), but translating it to
+    # the address's natural key (raw) must still produce a MATCH.
+    plan, result, _ = _compare_one(*two_dbs_addr, "tx_out")
+    assert not any("address_id" in s for s in plan.skipped_cols)  # translated, not UNMAPPED
+    assert result.status == "MATCH", result.note
+    assert result.n1 == result.n2 > 0
+
+
+def test_address_variant_corrupted_address_is_detected(two_dbs_addr):
+    # The whole point of the fix: corrupting the address an in-range output points
+    # at must surface as a tx_out HASH_DIFF. Before address_id was mapped, this
+    # column was dropped and the corruption was invisible.
+    c1, c2 = two_dbs_addr
+    c2.execute("UPDATE address SET raw = decode(md5('corrupt'),'hex') WHERE id = 101")  # addr0 in DB2
+    _, result, _ = _compare_one(c1, c2, "tx_out")
+    assert result.status == "HASH_DIFF"
+    assert result.n1 == result.n2  # only the address content changed, no row count change
+
+
+def test_address_table_accumulator_subset_check(two_dbs_addr, _db_dsns_addr):
+    # The address table is an accumulator with a registered natural key (raw), so
+    # --verify-accumulators can subset-check it. An extra row in DB2 is a clean
+    # superset (only_db2 = 1, only_db1 = 0).
+    from db_sync_comparator.verify import verify_accumulator
+
+    _, c2 = two_dbs_addr
+    c2.execute("INSERT INTO address VALUES (888, 'addr-extra', decode(md5('addr-extra'),'hex'), false, NULL, NULL)")
+    v = verify_accumulator(_db_dsns_addr[0], _db_dsns_addr[1], "address")
+    assert v["verified"] is True
+    assert v["only_db1"] == 0
+    assert v["only_db2"] == 1
+    assert "db1 ⊆ db2" in v["verdict"]
