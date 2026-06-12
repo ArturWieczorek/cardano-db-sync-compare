@@ -1,17 +1,17 @@
 # cardano-db-sync-compare
 
 Check whether **two [cardano-db-sync](https://github.com/IntersectMBO/cardano-db-sync)
-databases hold the same blockchain data** — fast enough to use as a release gate
+databases hold the same blockchain data** - fast enough to use as a release gate
 on mainnet-sized (500 GB+) databases.
 
 cardano-db-sync follows the Cardano chain and writes it into PostgreSQL so normal
 SQL tools can read it. When a new db-sync version is released, you want proof that
-it produced **the same data** as the previous version over the same chain — no
+it produced **the same data** as the previous version over the same chain - no
 dropped rows, no corrupted values. This tool gives you that proof, per table, and
 points at *where* in the chain any difference is.
 
 It deliberately does **not** compare the two databases byte-for-byte (that would
-be wrong — see [why](#why-its-built-this-way)). It compares them by *meaning*:
+be wrong - see [why](#why-its-built-this-way)). It compares them by *meaning*:
 it fingerprints the actual blockchain content of every table, on the database
 server, and reports which tables match and which differ.
 
@@ -39,7 +39,7 @@ db-sync-compare --db1 ... --db2 ... --json report.json
 ```
 
 Exit code is `0` if the databases are content-equivalent over the compared range,
-`1` if discrepancies are found, `2` on an operational error — so it drops
+`1` if discrepancies are found, `2` on an operational error - so it drops
 straight into CI. Full option reference: [docs/05-running-it.md](docs/05-running-it.md).
 
 ---
@@ -51,10 +51,10 @@ A complete walkthrough, assuming nothing.
 ### 0. What you need first
 
 - **Python 3.10+** (`python3 --version`).
-- **Two cardano-db-sync PostgreSQL databases to compare** — this tool does **not**
+- **Two cardano-db-sync PostgreSQL databases to compare** - this tool does **not**
   create or sync them; it reads two databases that **already exist** (e.g. one per
   db-sync version). You need an account that can **read** both (read-only is
-  enough — the tool never writes to them).
+  enough - the tool never writes to them).
 - That's it. No Cardano node, no superuser. Optionally [`uv`](https://docs.astral.sh/uv/)
   for the fast install path below.
 
@@ -68,12 +68,12 @@ cd cardano-db-sync-compare
 ### 2. Install (pick one path)
 
 ```bash
-# Path A — pip (works everywhere)
+# Path A - pip (works everywhere)
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -e .            # installs psycopg + the `db-sync-compare` command
 
-# Path B — uv (faster; `make install` uses it). Install uv once, then:
+# Path B - uv (faster; `make install` uses it). Install uv once, then:
 make install                # creates .venv, installs everything, opens a shell
 ```
 
@@ -89,7 +89,7 @@ db-sync-compare --version
 Each DB is a libpq **connection string** (`conninfo`). The common shapes:
 
 ```bash
-# local PostgreSQL over the Unix socket (peer auth — no password):
+# local PostgreSQL over the Unix socket (peer auth - no password):
 "dbname=mydb_v1 host=/var/run/postgresql"
 
 # remote / TCP with a user + password:
@@ -106,10 +106,10 @@ psql "dbname=mydb_v1 host=/var/run/postgresql" -c "select max(block_no) from blo
 
 If that prints a block number for **both** databases, you're ready.
 
-### 4. Dry run — see the plan, touch no data
+### 4. Dry run - see the plan, touch no data
 
 Always start here. It prints, per table, exactly what SQL it will run and how
-it's bounded — and proves it understands your schema:
+it's bounded - and proves it understands your schema:
 
 ```bash
 db-sync-compare \
@@ -120,7 +120,7 @@ db-sync-compare \
 
 Confirm there are **`0` UNMAPPED columns** in the output (the tool knows every
 foreign key). If you see `UNMAPPED`, your db-sync schema is newer than the
-tool's registry — see [docs/09](docs/09-extending-and-limitations.md).
+tool's registry - see [docs/09](docs/09-extending-and-limitations.md).
 
 ### 5. Fast spot-check on a small slice
 
@@ -138,7 +138,7 @@ db-sync-compare --db1 "..." --db2 "..." --json report.json --verify-accumulators
 
 This compares everything up to the **common tip** and writes a machine-readable
 `report.json`. On **mainnet-sized** (500 GB+) databases this runs for hours and
-should be launched **detached** — see
+should be launched **detached** - see
 [Running on mainnet](#running-on-mainnet-operational-guide) below for the exact
 `nohup` invocation, what files to watch, and hardware/disk needs.
 
@@ -154,7 +154,7 @@ The summary line and per-table lines tell you everything; exit code for CI:
 
 `MATCH` = identical; `HASH_DIFF`/`COUNT_DIFF`/`VALUE_DIFF` = a real difference
 (the tool prints *where* in the chain); an **accumulator** `COUNT_DIFF` or a
-`0 vs N` count is usually expected (tip gap / a feature disabled in config) — the
+`0 vs N` count is usually expected (tip gap / a feature disabled in config) - the
 output says so. Full interpretation guide: [docs/05](docs/05-running-it.md#reading-the-output).
 
 ### 8. Learn more
@@ -177,7 +177,7 @@ principles and with analogies, is in [docs/](docs/00-start-here.md)):
 
 2. **Surrogate id drift.** Every row gets an auto-numbered `id` from a sequence;
    rollbacks burn id numbers, so two syncs of the same chain end up with
-   **different** `id`s for the same row — and every foreign key inherits the
+   **different** `id`s for the same row - and every foreign key inherits the
    drift. (Measured on real mainnet DBs: 13.6.0.5 had 16,899 id-gaps in `block`,
    13.7.1.0 had 10.) → The tool **drops the `id`** and **translates every foreign
    key to the natural key** (block hash, tx hash, …) of the row it points at, so
@@ -186,13 +186,20 @@ principles and with analogies, is in [docs/](docs/00-start-here.md)):
 3. **Scale.** `ma_tx_out` has ~1.1 **billion** rows. → All hashing happens
    **inside PostgreSQL** as an order-independent, duplicate-safe **set hash**
    (sum of per-row MD5s); only a count and two numbers cross the wire. The few
-   giant tables get **tiered** cheaper checks by default. On a mismatch, a
-   **binary search** over chain ranges localizes it to a narrow block window.
+   giant tables get **tiered** cheaper checks by default.
+
+Those checks run in two phases: **Phase 1 answers "is there a difference?"** (one
+fingerprint per table), and on a mismatch **Phase 2 ("localization") answers "where
+is it?"** by **binary search** over chain ranges, narrowing to a small block window
+so you can pull the rows and see what changed. (`--localize buckets` does the same
+in one pass - ~11× faster on giant tables; see
+[docs/07](docs/07-performance-and-scaling.md). Phase 2 is skipped under
+`--block-range`, which is already a narrow window.)
 
 These ideas are the same family used by battle-tested tools like Percona's
-`pt-table-checksum` and Datafold's `data-diff`; the bespoke parts — natural-key
+`pt-table-checksum` and Datafold's `data-diff`; the bespoke parts - natural-key
 translation, a hand-built logical-FK map (db-sync declares no FK constraints),
-and schema-drift tolerance — are what those generic tools can't do here. The
+and schema-drift tolerance - are what those generic tools can't do here. The
 trade-offs behind each choice are written up in
 [docs/04-what-i-used-and-why.md](docs/04-what-i-used-and-why.md).
 
@@ -223,10 +230,21 @@ Dependencies point inward toward `model`/`registries`; importing the top-level
 package pulls in **no** database driver, so the pure-logic modules unit-test
 without psycopg installed.
 
+### Contributing - every change follows the full cycle
+
+No change is too small to skip the cycle: **plan first** (check the current
+db-sync schema at the matching version tag) → run the **existing** tests for a
+green baseline → **write the test first (TDD)** and cover the new behaviour (unit,
+plus a `fixture` e2e test if it touches the engine) → update the **docs, README,
+and CHANGELOG** → run `make check` (ruff + mypy + pytest) until green → decide
+whether **CI** needs new coverage. New capability is **opt-in and defaults to
+today's behaviour**. The full contract, with rationale, is the **Definition of
+done** in [AGENTS.md](AGENTS.md).
+
 ### Source of truth for the schema
 
 `db_sync_comparator/registries.py` encodes db-sync schema knowledge (natural
-keys, logical foreign keys, anchors) by hand — it **mirrors** db-sync but isn't
+keys, logical foreign keys, anchors) by hand - it **mirrors** db-sync but isn't
 authoritative. When the schema changes, cross-check upstream, **at the git tag
 matching the db-sync version you're comparing** (`master` runs ahead of releases):
 the [schema reference](https://github.com/IntersectMBO/cardano-db-sync/blob/master/doc/schema.md),
@@ -237,27 +255,27 @@ See [AGENTS.md](AGENTS.md) and [docs/09](docs/09-extending-and-limitations.md).
 
 ---
 
-## Scope — what is and isn't compared
+## Scope - what is and isn't compared
 
 So there are **no surprises** about what a "match" actually covers:
 
 - **Compared:** every **chain-derived** table, up to the **common tip** of the two
   databases (the lower of the two, minus a small margin). That's ~59 of the ~75
-  tables — all the block/tx/output/stake/pool/governance data.
+  tables - all the block/tx/output/stake/pool/governance data.
 - **NOT compared (excluded by design):** ~**16 tables whose contents are *not* a
   function of the chain**, so two honest syncs legitimately differ there. They are
   **not part of the equivalence verdict**:
-  - **network-fetched** off-chain metadata — `off_chain_pool_data`,
+  - **network-fetched** off-chain metadata - `off_chain_pool_data`,
     `off_chain_vote_data`, their helper/error tables (which URLs resolved, when,
     and the bytes fetched are non-deterministic);
-  - **per-instance bookkeeping** — `meta` (this DB's version/start time),
+  - **per-instance bookkeeping** - `meta` (this DB's version/start time),
     `schema_version`, `schema_migrations`, `extra_migrations`;
-  - **volatile/operational** — `epoch_sync_time` (wall-clock), `reverse_index`
+  - **volatile/operational** - `epoch_sync_time` (wall-clock), `reverse_index`
     (tip-only rollback helper);
-  - **SMASH operator state** — `delisted_pool`, `reserved_pool_ticker`.
+  - **SMASH operator state** - `delisted_pool`, `reserved_pool_ticker`.
 - **Accumulator tables** (e.g. `multi_asset`, `stake_address`) have no chain anchor,
   so a row-**count** delta there is reported as *informational* (usually the tip
-  gap) — verify it with `--verify-accumulators`. See
+  gap) - verify it with `--verify-accumulators`. See
   [docs/06](docs/06-how-each-table-is-compared.md).
 
 `db-sync-compare --plan` prints the full excluded list with the reason for each.
@@ -276,25 +294,27 @@ Validated against two real **mainnet** databases:
 | Tip | block 13,313,031 / epoch 626 | block 13,488,662 / epoch 634 |
 | Rollback id-gaps in `block` | 16,899 | 10 |
 
-Every comparable table matched across the full shared history **except one** —
+Every comparable table matched across the full shared history **except one** -
 and that one was a real bug:
 
 > **db-sync 13.7.1.0 stores stake-pool relay ports above 32767 as negative
 > numbers** (a signed-16-bit overflow: `52636` is stored as `-12900`). 13.6.0.5
 > stores them correctly; ~1,100+ mainnet relays are affected. The tool found and
-> pinpointed it automatically — see the
+> pinpointed it automatically - see the
 > [case study](docs/08-case-study-pool-relay-port.md).
 
 A full mainnet comparison surfaced **four** real data differences and the tool
 explained every one: three known/fixed db-sync issues it independently
-re-detected — pointer-address encoding (#2053, `tx_out`), `epoch.out_sum`/`fees`
+re-detected - pointer-address encoding (#2053, `tx_out`), `epoch.out_sum`/`fees`
 corruption (#2118, repaired by migration 0048), and the zero-amount `epoch_stake`
-cleanup (migration 0047) — plus the previously-unreported `pool_relay.port`
-regression above. The rest were expected config/tip differences. Full root-cause
+cleanup (migration 0047) - plus the previously-unreported `pool_relay.port`
+regression above, since filed (and root-caused to `Schema/Core/Pool.hs:224`) as
+[cardano-db-sync #2135](https://github.com/IntersectMBO/cardano-db-sync/issues/2135).
+The rest were expected config/tip differences. Full root-cause
 writeup: [benchmarks/INVESTIGATION-13.6.0.5-vs-13.7.1.0.md](benchmarks/INVESTIGATION-13.6.0.5-vs-13.7.1.0.md).
 
 **Measured full run:** the complete comparison (tiered, `--workers 6`) took
-**9h 42m** — dominated by the billion-row giants: `ma_tx_out` 2h17m (1.12B rows),
+**9h 42m** - dominated by the billion-row giants: `ma_tx_out` 2h17m (1.12B rows),
 `tx_in` 1h48m, `tx_out` 1h29m (+ its Phase-2 localization), `collateral_tx_in`
 1h04m, `reward` 51m. The raw report and per-table timings are committed under
 [`benchmarks/`](benchmarks/) (`mainnet-full-2026-06-05.{json,log,SUMMARY.md}`).
@@ -307,7 +327,7 @@ A full mainnet comparison runs for **hours** and leans on the database server
 hard. Lessons from a real 500 GB run:
 
 **Run it independently of your shell and of any agent/automation.** It's a
-long-lived batch job — don't tie its lifetime to an interactive session.
+long-lived batch job - don't tie its lifetime to an interactive session.
 
 ```bash
 # detached, survives logout/disconnect; unbuffered so the log streams live
@@ -325,8 +345,8 @@ Everything else is optional. It produces two files you will use:
 
 | File | When written | What to check it for |
 |------|--------------|----------------------|
-| `run.log` (stdout, `-u`) | live, line by line | **progress** — one `OK`/`!!` line + seconds per table; the final **`SUMMARY:`** line (counts of match / discrepancies / accumulator deltas / errors); the **`DISCREPANCIES:`** and **`ERRORS:`** blocks; and the wrapper's **`FINISHED rc=… WALL_SECONDS=…`** line (exit code + total wall-clock) |
-| `report.json` (`--json`) | once, at the very end | the **machine-readable result** — per-table `status`, row counts, the two set-hashes, `seconds`, `localized` windows, `skipped_cols`. This is what you archive, diff between runs, or feed to CI |
+| `run.log` (stdout, `-u`) | live, line by line | **progress** - one `OK`/`!!` line + seconds per table; the final **`SUMMARY:`** line (counts of match / discrepancies / accumulator deltas / errors); the **`DISCREPANCIES:`** and **`ERRORS:`** blocks; and the wrapper's **`FINISHED rc=… WALL_SECONDS=…`** line (exit code + total wall-clock) |
+| `report.json` (`--json`) | once, at the very end | the **machine-readable result** - per-table `status`, row counts, the two set-hashes, `seconds`, `localized` windows, `skipped_cols`. This is what you archive, diff between runs, or feed to CI |
 
 When it finishes, triage in three commands:
 
@@ -339,16 +359,16 @@ grep -E '^  !! |DISCREPANC|ERROR' run.log      # everything that did NOT match
 Other lessons:
 
 - **Don't set a short `--statement-timeout`** (default `0` = none). Individual
-  giant-table scans can take **30–60+ min**; a timeout would abort them and fail
+  giant-table scans can take **30-60+ min**; a timeout would abort them and fail
   the run for no good reason.
 - **A notifier must be detached too.** The comparison is the only thing that
   *must* be `nohup`'d; but if you also want a "tell me when it's done" watcher, it
   has to be detached as well (`nohup`/`tmux`/`systemd-run`) and communicate via
-  files — a process tied to your shell dies on logout. Pattern: the runner writes
+  files - a process tied to your shell dies on logout. Pattern: the runner writes
   `run.log`/`report.json`; a second detached one-liner waits
   (`until grep -q '^FINISHED' run.log; do sleep 60; done`) and then copies the
   results somewhere stable.
-- **It does not modify the databases** — every query is read-only, so a crash or
+- **It does not modify the databases** - every query is read-only, so a crash or
   a kill can't corrupt or shrink either DB. Safe to stop and re-run.
 - Re-run from a clean checkout with `--plan` first to confirm **0 unmapped FKs**
   against the current schema (see [Source of truth](#source-of-truth-for-the-schema)).
@@ -358,30 +378,30 @@ Other lessons:
 Read-only on the *data*, but **not** free on resources. The one that surprises
 people (and makes free disk space visibly fluctuate during the run):
 
-- **Disk — large *temporary* files (the important one).** Translating foreign
+- **Disk - large *temporary* files (the important one).** Translating foreign
   keys to natural keys hash-joins the giant tables (`ma_tx_out`, `tx_out`,
   `tx_in`, …) against `tx`/`datum`/`stake_address`. When a join's hash table
   exceeds `work_mem` it **spills to PostgreSQL temp files** (`base/pgsql_tmp`).
   On the validation run this produced **hundreds of GB of temp I/O cumulatively**
-  (~478 GB on one DB, ~255 GB on the other) with **tens of GB live at peak** — so
+  (~478 GB on one DB, ~255 GB on the other) with **tens of GB live at peak** - so
   **free disk space rises and falls** as each big query spills and then releases.
   It's transient (nothing is written to the databases themselves), but you need
   **ample free disk headroom**: budget tens of GB free, more with more `--workers`
   or with `--full`. You can hard-cap it with PostgreSQL's `temp_file_limit`, or
   move it off the data disk with a dedicated `temp_tablespaces`.
-- **RAM.** The client (this tool) is tiny — ~10–40 MB; *all* the heavy work runs
+- **RAM.** The client (this tool) is tiny - ~10-40 MB; *all* the heavy work runs
   inside PostgreSQL. The real RAM cost is server-side and roughly
   `workers × (concurrent hash/sort operations) × work_mem`, plus `shared_buffers`,
   plus OS page cache used while scanning ~500 GB. At `--workers 6 --work-mem 256MB`
   that's a few GB of `work_mem` at peak. Raising `--work-mem` trades RAM for less
   temp-disk spill.
-- **Swap — not the lever here, just a safety net.** PostgreSQL does **not** page
+- **Swap - not the lever here, just a safety net.** PostgreSQL does **not** page
   `work_mem` out to OS swap: when a hash/sort exceeds `work_mem` it spills to
   **temp files on disk** (the point above), not to swap. So adding swap won't make
-  the run faster or absorb that temp pressure — the real levers are `--work-mem`,
-  `--workers`, and free **temp disk**. Keep only a **small** swap (≈2–8 GB, or up
-  to ~1× RAM capped around 8–16 GB) purely as an OOM cushion in case you over-size
-  `--work-mem × --workers`, and set `vm.swappiness` **low** (1–10) so the kernel
+  the run faster or absorb that temp pressure - the real levers are `--work-mem`,
+  `--workers`, and free **temp disk**. Keep only a **small** swap (≈2-8 GB, or up
+  to ~1× RAM capped around 8-16 GB) purely as an OOM cushion in case you over-size
+  `--work-mem × --workers`, and set `vm.swappiness` **low** (1-10) so the kernel
   doesn't evict the page cache / PostgreSQL into swap and thrash the scans. If you
   find the box actually swapping during a run, that's a signal to *lower*
   `--work-mem`/`--workers`, not to add more swap.
@@ -397,7 +417,7 @@ people (and makes free disk space visibly fluctuate during the run):
 | tight RAM | keep `--work-mem` modest, lower `--workers` | more temp spill (need disk), gentler on RAM |
 | plenty of both | more `--workers` | faster wall-clock, more concurrent temp + RAM |
 
-Avoid `--full` on mainnet unless you have the disk and time — it deep-joins the
+Avoid `--full` on mainnet unless you have the disk and time - it deep-joins the
 1.1B-row `ma_tx_out` and multiplies temp usage. More detail and measured numbers
 are in [docs/07-performance-and-scaling.md](docs/07-performance-and-scaling.md).
 
@@ -438,9 +458,9 @@ export DBSYNC_COMPARE_TEST_DSN2="dbname=v2 host=/var/run/postgresql"
 pytest -m integration
 ```
 
-CI runs the DB-free suite on Python 3.10–3.12 and the `fixture` suite against a
-PostgreSQL service container. The full testing strategy — what each tier is for,
-why PostgreSQL and not SQLite, and how the synthetic fixtures work — is in
+CI runs the DB-free suite on Python 3.10-3.12 and the `fixture` suite against a
+PostgreSQL service container. The full testing strategy - what each tier is for,
+why PostgreSQL and not SQLite, and how the synthetic fixtures work - is in
 [docs/10-testing.md](docs/10-testing.md).
 
 ---
@@ -449,7 +469,7 @@ why PostgreSQL and not SQLite, and how the synthetic fixtures work — is in
 
 Start at **[docs/00-start-here.md](docs/00-start-here.md)**. The docs assume only
 basic database words (table, row, primary/foreign key) and teach everything else
-— indexing, hashing, Cardano, db-sync, id drift — from zero, with analogies.
+- indexing, hashing, Cardano, db-sync, id drift - from zero, with analogies.
 
 ## Links
 

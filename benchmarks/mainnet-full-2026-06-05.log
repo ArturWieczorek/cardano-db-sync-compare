@@ -117,16 +117,16 @@ Phase 2: localizing mismatches ...
 SUMMARY: 45 match, 7 discrepancies, 6 accumulator count-deltas (informational), 1 errors, 16 excluded
 
 DISCREPANCIES:
-  epoch: HASH_DIFF — row counts match but content hash differs
+  epoch: HASH_DIFF - row counts match but content hash differs
       -> epoch_no 596..596: content differs (db1 n=1, db2 n=1)
-  epoch_state: COUNT_DIFF — row count differs (120 vs 118)
+  epoch_state: COUNT_DIFF - row count differs (120 vs 118)
       -> epoch_no 568..568: row count differs (db1 n=2, db2 n=1)
       -> epoch_no 607..607: row count differs (db1 n=2, db2 n=1)
-  gov_action_proposal: HASH_DIFF — row counts match but content hash differs
+  gov_action_proposal: HASH_DIFF - row counts match but content hash differs
       -> block_no 13170021..13171646: content differs (db1 n=1, db2 n=1)
       -> block_no 13222025..13223650: content differs (db1 n=1, db2 n=1)
       -> block_no 13269154..13270778: content differs (db1 n=1, db2 n=1)
-  pool_relay: HASH_DIFF — row counts match but content hash differs
+  pool_relay: HASH_DIFF - row counts match but content hash differs
       -> block_no 4490224..4491848: content differs (db1 n=681, db2 n=681)
       -> block_no 4496724..4498348: content differs (db1 n=143, db2 n=143)
       -> block_no 4499975..4501599: content differs (db1 n=110, db2 n=110)
@@ -135,7 +135,7 @@ DISCREPANCIES:
       -> block_no 4512976..4514600: content differs (db1 n=157, db2 n=157)
       -> block_no 4516226..4517850: content differs (db1 n=83, db2 n=83)
       -> block_no 4517851..4519475: content differs (db1 n=75, db2 n=75)
-  pool_stat: COUNT_DIFF — row count differs (0 vs 1134346)
+  pool_stat: COUNT_DIFF - row count differs (0 vs 1134346)
       -> epoch_no 209..209: row count differs (db1 n=0, db2 n=721)
       -> epoch_no 210..210: row count differs (db1 n=0, db2 n=882)
       -> epoch_no 211..211: row count differs (db1 n=0, db2 n=976)
@@ -144,7 +144,7 @@ DISCREPANCIES:
       -> epoch_no 214..214: row count differs (db1 n=0, db2 n=1095)
       -> epoch_no 215..215: row count differs (db1 n=0, db2 n=1107)
       -> epoch_no 216..216: row count differs (db1 n=0, db2 n=1119)
-  epoch_stake: COUNT_DIFF — row count differs (450149435 vs 440374279)
+  epoch_stake: COUNT_DIFF - row count differs (450149435 vs 440374279)
       -> epoch_no 210..210: row count differs (db1 n=17305, db2 n=17183)
       -> epoch_no 211..211: row count differs (db1 n=24252, db2 n=23823)
       -> epoch_no 212..212: row count differs (db1 n=30628, db2 n=29912)
@@ -153,7 +153,7 @@ DISCREPANCIES:
       -> epoch_no 215..215: row count differs (db1 n=42261, db2 n=41270)
       -> epoch_no 216..216: row count differs (db1 n=46931, db2 n=45872)
       -> epoch_no 217..217: row count differs (db1 n=51091, db2 n=49973)
-  tx_out: HASH_DIFF — row counts match but content hash differs
+  tx_out: HASH_DIFF - row counts match but content hash differs
       -> block_no 5566058..5567682: content differs (db1 n=25431, db2 n=25431)
       -> block_no 5684692..5686316: content differs (db1 n=40220, db2 n=40220)
       -> block_no 6583386..6585010: content differs (db1 n=116179, db2 n=116179)

@@ -1,0 +1,65 @@
+START 2026-06-05T14:20:03Z  cutoff-block=6000000
+
+############################################################
+### --tables tx_out --cutoff-block 6000000 --localize bisect
+############################################################
+==============================================================================
+cardano-db-sync database comparison
+==============================================================================
+DB1 tip: block 13313031, epoch 626
+DB2 tip: block 13488662, epoch 634
+common boundary: block_no <= 6000000, epoch_no <= 624
+DB1 spine id-ranges: {'block': (0, 6000177), 'tx': (1, 9813473), 'tx_out': (1, 23159783), 'pool_update': (1, 20067), 'gov_action_proposal': (None, None)}
+DB2 spine id-ranges: {'block': (0, 6000177), 'tx': (1, 9813473), 'tx_out': (1, 23159783), 'pool_update': (1, 20067), 'gov_action_proposal': (None, None)}
+
+Phase 1: hashing 1 tables with 1 workers ...
+
+  !! tx_out                       HASH_DIFF   n=23159783/23159783   499.7s  row counts match but content hash differs
+
+Phase 2: localizing mismatches ...
+  tx_out: block_no 5566408..5567872: content differs (db1 n=20325, db2 n=20325)
+  tx_out: block_no 5685060..5686524: content differs (db1 n=32476, db2 n=32476)
+
+==============================================================================
+SUMMARY: 0 match, 1 discrepancies, 0 accumulator count-deltas (informational), 0 errors, 0 excluded
+
+DISCREPANCIES:
+  tx_out: HASH_DIFF - row counts match but content hash differs
+      -> block_no 5566408..5567872: content differs (db1 n=20325, db2 n=20325)
+      -> block_no 5685060..5686524: content differs (db1 n=32476, db2 n=32476)
+==============================================================================
+report written to /tmp/buckets_sanity2_bisect.json
+>>> algo=bisect rc=1 elapsed=6204s
+
+############################################################
+### --tables tx_out --cutoff-block 6000000 --localize buckets
+############################################################
+==============================================================================
+cardano-db-sync database comparison
+==============================================================================
+DB1 tip: block 13313031, epoch 626
+DB2 tip: block 13488662, epoch 634
+common boundary: block_no <= 6000000, epoch_no <= 624
+DB1 spine id-ranges: {'block': (0, 6000177), 'tx': (1, 9813473), 'tx_out': (1, 23159783), 'pool_update': (1, 20067), 'gov_action_proposal': (None, None)}
+DB2 spine id-ranges: {'block': (0, 6000177), 'tx': (1, 9813473), 'tx_out': (1, 23159783), 'pool_update': (1, 20067), 'gov_action_proposal': (None, None)}
+
+Phase 1: hashing 1 tables with 1 workers ...
+
+  !! tx_out                       HASH_DIFF   n=23159783/23159783   506.0s  row counts match but content hash differs
+
+Phase 2: localizing mismatches ...
+  tx_out: block_no 5566050..5571909: content differs (db1 n=94684, db2 n=94684)
+  tx_out: block_no 5683230..5689089: content differs (db1 n=179162, db2 n=179162)
+
+==============================================================================
+SUMMARY: 0 match, 1 discrepancies, 0 accumulator count-deltas (informational), 0 errors, 0 excluded
+
+DISCREPANCIES:
+  tx_out: HASH_DIFF - row counts match but content hash differs
+      -> block_no 5566050..5571909: content differs (db1 n=94684, db2 n=94684)
+      -> block_no 5683230..5689089: content differs (db1 n=179162, db2 n=179162)
+==============================================================================
+report written to /tmp/buckets_sanity2_buckets.json
+>>> algo=buckets rc=1 elapsed=1009s
+
+DONE 2026-06-05T16:20:16Z

@@ -1,4 +1,4 @@
-# 09 — Extending and limitations
+# 09 - Extending and limitations
 
 > **What's in here:** how to keep the tool working as db-sync's schema evolves,
 > small ways to make it faster if you control the database, and an honest list of
@@ -11,18 +11,18 @@
 The two databases can be at **different schema versions** (a new release may add
 or drop columns). The tool reads both schemas at startup and compares only the
 **columns the two databases share**, per table. Columns present in only one
-database are reported, not hashed — so a new column doesn't cause a false
+database are reported, not hashed - so a new column doesn't cause a false
 mismatch, and you still get told it exists. New whole **tables** present in only
 one database are listed and skipped.
 
 (In the validation run the two versions happened to have identical columns even
-though their internal schema-version numbers differed — the extra migrations were
+though their internal schema-version numbers differed - the extra migrations were
 data/index changes, not column changes. The tool would have coped either way.)
 
 ## Adding a new table or foreign key
 
 When db-sync adds tables or columns, you may need to teach the tool about them.
-First confirm the new shape against the upstream **source of truth** — the
+First confirm the new shape against the upstream **source of truth** - the
 [schema reference](https://github.com/IntersectMBO/cardano-db-sync/blob/master/doc/schema.md),
 the [schema source](https://github.com/IntersectMBO/cardano-db-sync/tree/master/cardano-db/src/Cardano/Db/Schema),
 and the [migrations](https://github.com/IntersectMBO/cardano-db-sync/tree/master/cardano-db/test/schema),
@@ -32,12 +32,12 @@ ahead of releases). Then teach the tool: everything lives in
 
 - **A new foreign-key column** → add it to `GLOBAL_FK` (if the name is
   unambiguous) or `FK_MAP` (if the same name means different things in different
-  tables). If you forget, the tool won't silently hash a drifting id — it will
+  tables). If you forget, the tool won't silently hash a drifting id - it will
   flag the column as `UNMAPPED` and exclude it, which is your cue to map it.
 - **A new table that others point at** → add its natural key to `NATURAL_KEYS`.
 - **A new table to bound to the chain** → add an entry to `ANCHORS` (tie it to a
   transaction, an epoch, a pool update, etc.). If you don't, the tool treats it as
-  an *accumulator* (compared whole, count differences informational) — a safe
+  an *accumulator* (compared whole, count differences informational) - a safe
   default.
 - **A new non-chain table** (network-fetched or per-instance) → add it to
   `EXCLUDED_TABLES` with a reason.
@@ -57,7 +57,7 @@ CREATE INDEX ON redeemer (tx_id);
 CREATE INDEX ON collateral_tx_out (tx_id);
 ```
 
-Don't do this casually on a production database — extra indexes cost write speed
+Don't do this casually on a production database - extra indexes cost write speed
 and disk. For a full release comparison it makes little difference anyway (the
 whole table is read either way).
 
@@ -67,6 +67,12 @@ whole table is read either way).
   and per-database bookkeeping aren't a function of the chain
   ([doc 06](06-how-each-table-is-compared.md)). Compare those out of band if you
   need to.
+- **The two TxOut variants can't be compared against each other.** Core (address
+  inline in `tx_out`) and Address (`use_address_table`, address in a separate
+  `address` table reached via `address_id`) have *different columns*, so a
+  Core-vs-Address run is not meaningful. Two databases that use the **same**
+  variant compare correctly - both are supported
+  ([doc 06 §3](06-how-each-table-is-compared.md)).
 - **Accumulator count differences are informational, not failures.** When one
   database is synced further it has seen more distinct tokens / addresses / pools.
   The tool flags the delta but doesn't fail on it. If you need to be strict, equalize
@@ -81,19 +87,19 @@ whole table is read either way).
   block range* differ; a human reads the actual rows to judge whether it's a
   regression or an intended change (the [case study](08-case-study-pool-relay-port.md)
   shows the drill-in).
-- **MD5 is used for speed, not security.** Fine here — nobody is adversarially
+- **MD5 is used for speed, not security.** Fine here - nobody is adversarially
   crafting rows; we just need a fast change-detecting fingerprint
   ([primer 03](primers/03-hashing-and-fingerprints.md)).
 
 ## Verifying a change to the tool
 
-1. `python -m py_compile db_sync_comparator/*.py` — it imports cleanly; `make check` runs lint+types+tests.
-2. `--plan` against two real databases — 0 `UNMAPPED` columns, every table
+1. `python -m py_compile db_sync_comparator/*.py` - it imports cleanly; `make check` runs lint+types+tests.
+2. `--plan` against two real databases - 0 `UNMAPPED` columns, every table
    classified sensibly.
-3. `--block-range` on a historical window — finishes fast and reports `MATCH` for
+3. `--block-range` on a historical window - finishes fast and reports `MATCH` for
    tables you expect to match.
 4. A known-difference test (like the [pool-relay case](08-case-study-pool-relay-port.md))
-   — confirm it still flags and localizes.
+   - confirm it still flags and localizes.
 
 ---
 

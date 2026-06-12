@@ -16,6 +16,12 @@ def test_accumulator_key_sql_single_column():
     assert accumulator_key_sql("stake_address") == "coalesce(\"hash_raw\"::text, '')"
 
 
+def test_accumulator_key_sql_address():
+    # Address (use_address_table) variant: the address table's natural key is the
+    # raw address bytes, so --verify-accumulators can subset-check it.
+    assert accumulator_key_sql("address") == "coalesce(\"raw\"::text, '')"
+
+
 def test_accumulator_key_sql_none_when_no_natural_key():
     # committee_member is an accumulator but has no registered natural key
     assert accumulator_key_sql("committee_member") is None

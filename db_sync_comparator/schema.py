@@ -3,7 +3,7 @@
 Reads columns, primary keys, GENERATED columns and (the rare) declared foreign
 keys from ``information_schema``/``pg_catalog``. db-sync declares almost no FK
 constraints, so the logical FK map in :mod:`db_sync_comparator.registries` is
-what actually drives translation — but we still read what's declared.
+what actually drives translation - but we still read what's declared.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-# 01 — Why compare two databases?
+# 01 - Why compare two databases?
 
 > **What's in here:** the real-world reason this tool exists, and what "the two
 > databases are the same" has to mean.
@@ -12,7 +12,7 @@ cardano-db-sync ships new versions regularly. A release might rewrite how data i
 stored, add a faster code path, change a library, or fix a bug elsewhere. Every
 such change carries a risk: **did it accidentally change the data that lands in
 PostgreSQL?** A dropped row, a mis-decoded number, a value written in the wrong
-column — any of these would silently corrupt what every downstream explorer,
+column - any of these would silently corrupt what every downstream explorer,
 wallet, and analytics pipeline reads.
 
 So a core QA task before blessing a release is:
@@ -23,7 +23,7 @@ So a core QA task before blessing a release is:
 That's what this tool automates. Database 1 is (say) the trusted previous release;
 database 2 is the release candidate. If every table's blockchain content matches,
 the new version is data-faithful. If a table differs, the tool tells you which
-table and **where in the chain** — so a human can look at the actual rows and
+table and **where in the chain** - so a human can look at the actual rows and
 decide whether it's a real regression or an intended change.
 
 ## What "the same" has to mean
@@ -39,7 +39,7 @@ faithful databases differ in ways that are **expected and meaningless**:
   fetched over HTTP), so they legitimately differ run to run.
 
 "The same" must mean: **for the stretch of chain both databases cover, every table
-contains the same set of blockchain facts** — once you ignore the meaningless
+contains the same set of blockchain facts** - once you ignore the meaningless
 bookkeeping (`id`s), translate the foreign keys to natural keys, and set aside the
 genuinely non-chain tables.
 

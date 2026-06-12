@@ -109,3 +109,44 @@ def test_accumulator_classification(make_schema):
     p = plan_table("multi_asset", schemas["multi_asset"], schemas["multi_asset"], common, full=False, giant_fk_depth=1)
     assert p.kind == "accumulator"
     assert p.anchor_kind == "none"
+
+
+def test_address_variant_output_translates_address_id(make_schema):
+    """Address (use_address_table) variant: collateral_tx_out has address_id (a
+    FK to the address table) instead of an inline address column. It must be
+    translated to the address's natural key (raw), not dropped as UNMAPPED."""
+    schemas = {
+        "collateral_tx_out": make_schema(
+            "collateral_tx_out",
+            ["id", "tx_id", "index", "address_id", "value"],
+            coltypes={"value": "numeric"},
+        ),
+        "tx": make_schema("tx", ["id", "hash"]),
+        "address": make_schema("address", ["id", "address", "raw", "stake_address_id"]),
+        "stake_address": make_schema("stake_address", ["id", "hash_raw"]),
+    }
+    common = _common(schemas)
+    p = plan_table(
+        "collateral_tx_out",
+        schemas["collateral_tx_out"],
+        schemas["collateral_tx_out"],
+        common,
+        full=False,
+        giant_fk_depth=1,
+    )
+    assert not any("address_id" in s for s in p.skipped_cols)  # not UNMAPPED
+    assert any('"raw"' in e for e in p.select_exprs)  # translated to address.raw
+
+
+def test_address_table_classified_accumulator(make_schema):
+    schemas = {
+        "address": make_schema("address", ["id", "address", "raw", "has_script", "payment_cred", "stake_address_id"]),
+        "stake_address": make_schema("stake_address", ["id", "hash_raw"]),
+    }
+    common = _common(schemas)
+    p = plan_table("address", schemas["address"], schemas["address"], common, full=False, giant_fk_depth=1)
+    assert p.kind == "accumulator"
+    assert p.anchor_kind == "none"
+    # its own content is still fingerprinted (raw/address/payment_cred), id dropped
+    assert not any(e == 't0."id"' for e in p.select_exprs)
+    assert any('"raw"' in e for e in p.select_exprs)

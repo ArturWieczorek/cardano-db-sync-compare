@@ -1,4 +1,4 @@
-"""Pure SQL generation — no database access.
+"""Pure SQL generation - no database access.
 
 Everything here is a string-building function (plus the small ``JoinBuilder``
 helper), which makes it straightforward to unit-test without a database. The two
@@ -75,7 +75,7 @@ def natural_key_exprs(
 
     Resolves ``("fk", ...)`` parts recursively (adding joins via ``jb``). Returns
     ``None`` if it cannot be resolved within ``max_depth`` or the target has no
-    registered natural key — the caller then drops the referencing column rather
+    registered natural key - the caller then drops the referencing column rather
     than hash a drifting id, recording it in ``skipped``.
     """
     spec = NATURAL_KEYS.get(target)
@@ -105,7 +105,7 @@ def natural_key_exprs(
 # for a given chain window. Because rows are inserted in chain order, the ids of
 # all rows belonging to a block window form a contiguous range *within one DB*
 # (rollbacks only burn ids near the tip), so the bound becomes an indexed
-# `t0.<fk> BETWEEN lo AND hi` — no join to block, no sequential scan. The lo/hi
+# `t0.<fk> BETWEEN lo AND hi` - no join to block, no sequential scan. The lo/hi
 # differ between the two DBs (id drift) but select the same logical rows.
 def build_anchor(anchor: tuple) -> tuple[str, str | None, str | None, str | None]:
     """Map an ``ANCHORS`` entry to ``(kind, spine, anchor_col, epoch_expr)``."""

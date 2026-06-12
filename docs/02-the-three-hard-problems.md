@@ -1,4 +1,4 @@
-# 02 — The three hard problems
+# 02 - The three hard problems
 
 > **What's in here:** the three things that make this much harder than running
 > `diff`, each with the real mainnet numbers, and why the naive approach fails on
@@ -11,7 +11,7 @@ into Python, hashed each row, sorted all the hashes, and compared. It fails on a
 three problems below. Understanding why is the fastest way to understand the
 design.
 
-## Problem 1 — The two databases are at different tips
+## Problem 1 - The two databases are at different tips
 
 One database is almost always synced further than the other. In the validation
 run:
@@ -24,11 +24,11 @@ run:
 Database 2 is ~175,000 blocks ahead. If you compare whole tables, **every** table
 "differs" simply because one has more rows. Meaningless.
 
-**So:** the tool must pick a **common boundary** — the lower of the two tips — and
+**So:** the tool must pick a **common boundary** - the lower of the two tips - and
 compare only data at or below it. (How it applies that boundary cheaply, per
 table, is in [how it works](03-how-it-works.md).)
 
-## Problem 2 — The row ids drift (and so do foreign keys)
+## Problem 2 - The row ids drift (and so do foreign keys)
 
 This is the big one, covered in full in
 [primer 05](primers/05-surrogate-ids-sequences-and-drift.md). The short version:
@@ -40,14 +40,14 @@ and `13,000,177` in the other:
 | 13,000,000 | 13,013,151 | 13,000,177 |
 
 The naive tool hashed each row *including* its `id` and foreign keys, so it would
-report a mismatch on nearly every table touched by a rollback — pure noise that
+report a mismatch on nearly every table touched by a rollback - pure noise that
 hides any real difference.
 
-**So:** the tool must compare by **meaning** — drop the `id`, translate foreign
+**So:** the tool must compare by **meaning** - drop the `id`, translate foreign
 keys to natural keys ([primer 05](primers/05-surrogate-ids-sequences-and-drift.md),
-Rules 1 and 2) — before fingerprinting.
+Rules 1 and 2) - before fingerprinting.
 
-## Problem 3 — Scale
+## Problem 3 - Scale
 
 These are the biggest tables in the 13.7.1.0 mainnet database:
 
@@ -61,7 +61,7 @@ These are the biggest tables in the 13.7.1.0 mainnet database:
 | `tx` | ~121,000,000 |
 
 The naive tool streamed all of these out of *both* databases and sorted a billion
-hashes in memory. That cannot run on a real database — it would move terabytes
+hashes in memory. That cannot run on a real database - it would move terabytes
 over the network and exhaust memory.
 
 **So:** all the heavy work must happen **inside PostgreSQL**, sending back only

@@ -1,20 +1,22 @@
-# Investigation report — mainnet 13.6.0.5 vs 13.7.1.0
+# Investigation report - mainnet 13.6.0.5 vs 13.7.1.0
 
 **Date:** 2026-06-05 · **Tool:** `db-sync-compare` (tiered, `--workers 6`)
 
 | | DB1 | DB2 |
 |---|---|---|
-| db-sync version | 13.6.0.5 (snapshot restored on 13.7.0.4) | 13.7.1.0 |
+| database name | `mainnet-13.6.0.5-restored-on-13.7.0.4` | `mainnet-dbsync-13.7.1.0-node-11.0.1` |
+| db-sync version | 13.6.0.5 (snapshot restored on 13.7.0.4) | 13.7.1.0 (node 11.0.1) |
 | tip | block 13,313,031 / epoch 626 | block 13,488,662 / epoch 634 |
 | `schema_version` stage_two | **44** | **48** |
 | common cutoff | block ≤ 13,313,031, epoch ≤ 624 | |
 
-The single most explanatory fact: **DB1 is missing stage-2 migrations 0045–0048**
+The single most explanatory fact: **DB1 is missing stage-2 migrations 0045-0048**
 (it sits at schema 44; DB2 at 48). Several differences trace directly to that.
 
-Every difference the tool reported is **explained** below — there is **no
+Every difference the tool reported is **explained** below - there is **no
 unexplained data corruption**. Most are known/fixed db-sync issues or config
-differences; one is a previously-unreported regression the tool discovered.
+differences; one is a previously-unreported regression the tool discovered, now
+filed as [#2135].
 
 ---
 
@@ -26,13 +28,13 @@ difference, or a (now-fixed) comparator bug:
 
 | finding | which DB is wrong | meaning for 13.7.1.0 |
 |---|---|---|
-| `pool_relay.port` overflow | **13.7.1.0** | ⚠️ **the one genuine regression** — file upstream |
-| `tx_out` pointer addrs · `epoch` out_sum/fees · `epoch_stake` zero-rows · `epoch_state` dups | 13.6.0.5 (old) | ✅ 13.7.1.0 **fixed** these — it's the correct one |
-| `pool_stat` (0 vs N) | neither | config — feature disabled in the old build |
-| `gov_action_proposal` · 6 accumulators | neither | tip gap — both DBs correct for their own tip |
+| `pool_relay.port` overflow | **13.7.1.0** | ⚠️ **the one genuine regression** - filed as [#2135] |
+| `tx_out` pointer addrs · `epoch` out_sum/fees · `epoch_stake` zero-rows · `epoch_state` dups | 13.6.0.5 (old) | ✅ 13.7.1.0 **fixed** these - it's the correct one |
+| `pool_stat` (0 vs N) | neither | config - feature disabled in the old build |
+| `gov_action_proposal` · 6 accumulators | neither | tip gap - both DBs correct for their own tip |
 | `new_committee` | the comparator | tool bug (anchor); fixed and **re-run → MATCH** (0 rows) |
 
-Read as a release gate: **13.7.1.0's chain data is sound vs 13.6.0.5** — it
+Read as a release gate: **13.7.1.0's chain data is sound vs 13.6.0.5** - it
 corrects four classes of older defects and introduces exactly one of its own
 (the pool-relay port overflow). *Caveat:* the 16 non-chain/per-instance tables
 are excluded by design (§1), and one representative `gov_action_proposal` row was
@@ -40,7 +42,7 @@ inspected (the other two are the same near-tip lifecycle pattern, §B).
 
 ---
 
-## Phase-1 results — every flagged table (exact counts)
+## Phase-1 results - every flagged table (exact counts)
 
 **45 of the 59** compared tables matched. The 14 flagged (Phase-1 `!!` lines):
 
@@ -59,27 +61,27 @@ inspected (the other two are the same near-tip lifecycle pattern, §B).
 | `cost_model` | COUNT_DIFF | 8 / 9 | accumulator → B |
 | `gov_action_proposal` | HASH_DIFF | 96 / 96 | governance value/timing → B |
 | `epoch_state` | COUNT_DIFF | 120 / 118 | governance value/timing → B |
-| `new_committee` | ERROR | — | comparator bug (fixed) → C |
+| `new_committee` | ERROR | - | comparator bug (fixed) → C |
 
 ---
 
-## A. Tool successes — real differences that map to known db-sync bugs/fixes
+## A. Tool successes - real differences that map to known db-sync bugs/fixes
 
 These validate the comparator against ground truth: it independently flagged data
 that corresponds to documented db-sync issues, and localized each one.
 
-### A1. `tx_out` — pointer-address encoding fix ([#2051] / [#2053])
+### A1. `tx_out` - pointer-address encoding fix ([#2051] / [#2053])
 - **Tool reported:** `tx_out` `HASH_DIFF` with **identical** row count
-  (345,996,649) — i.e. no rows missing, some *value* differs.
+  (345,996,649) - i.e. no rows missing, some *value* differs.
 - **How it was localized (method):**
-  1. Hashed per-block-window samples in both DBs — blocks 1M, 4M, 4.48M, 6M, 8M,
+  1. Hashed per-block-window samples in both DBs - blocks 1M, 4M, 4.48M, 6M, 8M,
      10.5M, 13.0M and the near-tip k-zone (last 2160 blocks) all **matched**.
   2. A full-row checksum sweep found the first divergence at **block ~7,000,000**
      (Alonzo): `win 7000000:7010000` differed, 6M and 8M matched.
   3. Per-column checksums over that window: **only `address` differs**;
      `payment_cred`, `value`, `data_hash`, `address_has_script`, stake all match.
   4. Dumped the keyed rows and diffed: **415** differing outputs, all
-     **pointer addresses** (`addr1g…`, type-4), 0 non-pointer — and they are a
+     **pointer addresses** (`addr1g…`, type-4), 0 non-pointer - and they are a
      **single distinct address** stored two ways (same payment credential, only
      the pointer triple differs):
      - v1 (13.6.0.5): `addr1g9ekml92qyvzrjmawxkh64r2w5xr6mg9ngfmxh2khsmdrcudevsft64mf887333adamant` (75 chars)
@@ -93,19 +95,19 @@ that corresponds to documented db-sync issues, and localized each one.
   **13.7.1.0 is correct** (era-aware). Affects only the rare, deprecated pointer
   addresses, so the row count is unchanged and the diff is tiny and isolated.
 
-### A2. `epoch` — out_sum/fees corruption repair ([#2118], migration 0048)
+### A2. `epoch` - out_sum/fees corruption repair ([#2118], migration 0048)
 - **Tool reported:** `epoch` `HASH_DIFF`, identical 625 rows (every epoch present,
   the aggregate *values* differ).
 - **Root cause:** numeric decoders truncated values when writing `epoch.out_sum`/
-  `epoch.fees`, corrupting them in db-sync 13.7.0.0–13.7.0.4. CHANGELOG **13.7.0.5**:
+  `epoch.fees`, corrupting them in db-sync 13.7.0.0-13.7.0.4. CHANGELOG **13.7.0.5**:
   *"Fix `epoch.out_sum`/`epoch.fees` corruption caused by numeric decoders [#2118]"*;
   CHANGELOG **13.7.1.0** auto-repair via **[migration 0048]** (recomputes
   `out_sum`/`fees`/`tx_count`/`blk_count` from the underlying tx/block tables). A
   manual fix also ships at `scripts/fix-epoch-table.sql`. **DB1 (schema 44) lacks 0048.**
 - **Verdict:** Expected. DB1 carries the corrupted aggregates; **13.7.1.0 is correct.**
 
-### A3. `epoch_stake` — legacy zero-amount rows cleanup ([migration 0047])
-- **Tool reported:** `epoch_stake` `COUNT_DIFF` — 450,149,435 (v1) vs 440,374,279
+### A3. `epoch_stake` - legacy zero-amount rows cleanup ([migration 0047])
+- **Tool reported:** `epoch_stake` `COUNT_DIFF` - 450,149,435 (v1) vs 440,374,279
   (v2); v1 has ~9.8M **more**, consistently higher per epoch (Phase-2 localization
   showed e.g. epoch 214: 38,780 vs 37,819; 215: 42,261 vs 41,270; …).
 - **Root cause:** the ledger used to emit zero-amount delegator entries and no
@@ -115,26 +117,61 @@ that corresponds to documented db-sync issues, and localized each one.
   (Related: [#2044] "Fixed epoch_stake missing entries".)
 - **Verdict:** Expected. DB1 keeps the zero-amount rows; **13.7.1.0 is correct.**
 
-### A4. `pool_relay.port` — signed-16-bit overflow ⚠️ *previously unreported*
+### A4. `pool_relay.port` - signed-16-bit overflow ⚠️ *the one genuine regression* - filed as [#2135]
 - **Tool reported:** `pool_relay` `HASH_DIFF`, identical 72,514 rows; localized to
   block ~4.49M during an earlier run.
-- **Root cause (discovered by the tool):** in **13.7.1.0**, relay ports **> 32767
-  are stored as negative** (signed-16-bit overflow: `52636` → `52636 − 65536 =
-  −12900`). Verified via value ranges:
-  - DB1 (13.6.0.5): `port ∈ [1, 64848]`, **1116** ports > 32767, **0** negative — correct.
-  - DB2 (13.7.1.0): `port ∈ [−32536, 31415]`, **0** ports > 32767, **1118** negative — wrong.
-  - The column is `integer` (int4) in **both** schemas, so it can hold 0–65535;
-    the truncation happens **at decode time**, before storage.
-- **Repo check:** **not** in [CHANGELOG], git history, or GitHub issues (search
-  returned 0 matches) → a regression the tool **discovered**. Here **13.6.0.5 is
-  correct and 13.7.1.0 is wrong** — the opposite direction from A1–A3. **Worth
-  filing upstream.** See the [case study](../docs/08-case-study-pool-relay-port.md).
+- **Symptom (discovered by the tool):** in **13.7.1.0**, relay ports **> 32767
+  are stored as negative** - a signed-16-bit overflow, where the stored value
+  equals `real_port - 65536`. Verified via value ranges:
+  - DB1 (13.6.0.5): `port ∈ [1, 64848]`, **1116** ports > 32767, **0** negative - correct.
+  - DB2 (13.7.1.0): `port ∈ [-32536, 31415]`, **0** ports > 32767, **1118** negative - wrong.
+  - Affected scope (DB2): **1,118** negative relay rows across **92 distinct pools**
+    (234 distinct pool+endpoint relays).
+  - Same relay in both DBs (stored value, and DB2 + 65536):
+    - `pool106skp…say4` (`128.199.9.15` / `159.65.130.53`): `41950` → `-23586` (`-23586 + 65536 = 41950`).
+    - `pool10q33p4…ppcf` (`relay1/2.spklpool.com`): `60001` → `-5535` (`-5535 + 65536 = 60001`).
+- **Root cause (confirmed in source):** the schema record types the port as an
+  **unsigned 16-bit** value, but its Hasql encoder writes it through a **signed**
+  16-bit encoder:
+  - `cardano-db/src/Cardano/Db/Schema/Core/Pool.hs:209` - `poolRelayPort :: !(Maybe Word16)` (0..65535, correct).
+  - `cardano-db/src/Cardano/Db/Schema/Core/Pool.hs:224` -
+    `poolRelayPort >$< E.param (E.nullable $ fromIntegral >$< E.int2)`.
+  - `E.int2` is the Postgres `int2` encoder, whose Haskell type is `Int16` (signed,
+    -32768..32767). So `fromIntegral :: Word16 -> Int16` **wraps** any port > 32767
+    to `port - 65536` *before* it reaches the database.
+  - The column is `"port" INT4` (`schema/migration-2-0001-20211003.sql:69`) and can
+    hold 0-65535, so the column is **not** the limit - the value is already
+    corrupted by the encoder. This hand-written encoder was introduced by the
+    Persistent→Hasql rewrite in **13.7.0.1** (13.6.0.5 used Persistent and stored
+    these ports correctly), the same family of wrong-width codec bugs as the
+    `epoch.out_sum`/`fees` numeric decoders fixed in [#2118] (A2).
+- **Fix (proposed in the issue):** encode via `int4` instead of `int2`
+  (`fromIntegral :: Word16 -> Int32` does not wrap, column is already `INT4`):
+  `poolRelayPort >$< E.param (E.nullable $ fromIntegral >$< E.int4)`, plus the
+  repair migration `UPDATE pool_relay SET port = port + 65536 WHERE port < 0;`
+  (negative ⟺ original > 32767, so +65536 is exact and safe).
+- **Not mainnet-specific - also confirmed on preprod and preview 13.7.1.0.** Since
+  the cause is the encoder (not anything network-specific), every 13.7.1.0 network
+  with a relay declaring a port > 32767 is affected; the count just scales with how
+  many such relays exist:
+
+  | network (13.7.1.0) | rows with port | min … max | negative | port > 32767 | pools / relays |
+  |---|---|---|---|---|---|
+  | mainnet | 72,400 | -32,536 … 31,415 | **1,118** | 0 | 92 / 234 |
+  | preprod | 1,341 | -25,536 … 31,000 | **17** | 0 | 9 / 9 |
+  | preview | 1,795 | -32,018 … 31,111 | **28** | 0 | 12 / 21 |
+
+  Examples: preprod `pool18dx5asa…00xnpm` / `123.14.11.23` `-25536` → 40000;
+  preview `pool14p3htfe…r3p60` / `kitty_noroot.outang.hopto.me` `-2306` → 63230.
+- **Status:** filed upstream as **[#2135]**. Here **13.6.0.5 is correct and 13.7.1.0
+  is wrong** - the opposite direction from A1-A3. See the
+  [case study](../docs/08-case-study-pool-relay-port.md).
 
 ---
 
 ## B. Expected / configuration differences (not bugs)
 
-- **`pool_stat` — 0 (v1) vs 1,134,346 (v2).** The `pool_stat` insert option
+- **`pool_stat` - 0 (v1) vs 1,134,346 (v2).** The `pool_stat` insert option
   (default off) was **disabled** in the 13.6.0.5 build. One-sided-zero ⇒ a
   config/feature difference, not corruption. (The tool now labels this and does
   not bisect it.)
@@ -142,18 +179,18 @@ that corresponds to documented db-sync issues, and localized each one.
   5.828M/5.857M, `pool_hash` 6123/6136, `drep_hash` 1603/1650, `slot_leader`
   3372/3379, `cost_model` 8/9): DB2 is ~175k blocks ahead, so it has seen more
   distinct objects. Informational.
-- **`epoch_state` COUNT_DIFF (120 vs 118)** — *verified:* DB1 (13.6.0.5) holds
+- **`epoch_state` COUNT_DIFF (120 vs 118)** - *verified:* DB1 (13.6.0.5) holds
   **duplicate rows** for epochs 568 and 607 (identical `committee_id`/
   `constitution_id` twice); DB2 (13.7.1.0) has the correct single row per epoch.
   So this is the old DB carrying duplicates and **13.7.1.0 being correct** (same
-  family as the pool_stat/epoch_stake cleanups) — not a regression.
-- **`gov_action_proposal` HASH_DIFF (96=96)** — *verified:* the rows exist in both;
+  family as the pool_stat/epoch_stake cleanups) - not a regression.
+- **`gov_action_proposal` HASH_DIFF (96=96)** - *verified:* the rows exist in both;
   only a **mutable lifecycle column** differs. E.g. proposal `b518ef…` (InfoAction)
   has `dropped_epoch=NULL` in DB1 vs `627` in DB2, because the proposal was dropped
-  in **epoch 627 — after DB1's tip (epoch 626)**, so only the further-synced DB
+  in **epoch 627 - after DB1's tip (epoch 626)**, so only the further-synced DB
   witnessed it. A **tip-gap effect on a near-tip proposal's outcome column**; both
   DBs are internally correct for their own tip. The other two differing rows are in
-  the same near-tip block band (13.17M–13.27M) with the same pattern. Not a
+  the same near-tip block band (13.17M-13.27M) with the same pattern. Not a
   regression in either DB.
 
 ## C. Comparator changes this investigation drove (commit `907fd4b`)
@@ -166,11 +203,11 @@ that corresponds to documented db-sync issues, and localized each one.
   up to the cutoff; a legacy/empty table on mainnet), alongside `committee`,
   `committee_member`, `constitution` → MATCH. So the error left no unknown.
 - **One-sided-zero tables are flagged, not localized.** Driven by `pool_stat`
-  (0 vs N): the tool now reports *"one side has 0 rows — table likely disabled in
+  (0 vs N): the tool now reports *"one side has 0 rows - table likely disabled in
   config (insert_options) for that version, not a data difference"* and Phase 2
   no longer wastes time bisecting it. Fixture test added.
 - **`--block-margin N` added.** Pull the block cutoff back below the lower tip by
-  ~`k` (≈2160 on mainnet) to stay out of the volatile rollback zone — the
+  ~`k` (≈2160 on mainnet) to stay out of the volatile rollback zone - the
   block-anchored counterpart to `--epoch-margin` (see §E).
 
 ---
@@ -182,25 +219,25 @@ that corresponds to documented db-sync issues, and localized each one.
 | `tx_out` | HASH_DIFF | known fix | pointer addresses [#2053] (13.7.0.1); 13.7.1.0 correct |
 | `epoch` | HASH_DIFF | known fix | out_sum/fees [#2118] + [migration 0048]; 13.7.1.0 correct |
 | `epoch_stake` | COUNT_DIFF | known fix | zero-amount cleanup, [migration 0047]; 13.7.1.0 correct |
-| `pool_relay` | HASH_DIFF | **regression (new)** | port signed-16-bit overflow in 13.7.1.0; **13.6.0.5 correct** |
+| `pool_relay` | HASH_DIFF | **regression → [#2135]** | port signed-16-bit overflow in 13.7.1.0 (`Pool.hs:224`); **13.6.0.5 correct** |
 | `pool_stat` | COUNT_DIFF (0 vs N) | config | `pool_stat` insert option off in 13.6.0.5 |
 | accumulators | COUNT_DIFF | expected | DB2 ahead (tip gap) |
 | `epoch_state` | COUNT_DIFF | old-DB dups | DB1 has duplicate rows (epochs 568/607); 13.7.1.0 correct |
 | `gov_action_proposal` | HASH_DIFF | tip gap | only `dropped_epoch` differs (dropped in epoch 627, after DB1's tip); both correct |
 | `new_committee` | ERROR → fixed → MATCH | tool bug | wrong anchor (no `epoch_no`); now `gov_action_proposal_id`; re-run → MATCH (0 rows) |
-| ~45 other tables | MATCH | — | content-equivalent across the full shared history |
+| ~45 other tables | MATCH | - | content-equivalent across the full shared history |
 
 ## E. Was the cutoff placed too early? (boundary analysis)
 
-Short answer: **no** — none of the flagged differences are cutoff/boundary
+Short answer: **no** - none of the flagged differences are cutoff/boundary
 artifacts. The cutoff was `block ≤ 13,313,031` (DB1's exact tip) and `epoch ≤ 624`
-(`min(626,634) − epoch-margin 2`).
+(`min(626,634) - epoch-margin 2`).
 
-- `tx_out` differs at **block ~7,000,000** — far below the tip, a real
+- `tx_out` differs at **block ~7,000,000** - far below the tip, a real
   pointer-address encoding fix (§A1), not a near-boundary effect. The near-tip
   k-zone (last 2160 blocks) was explicitly checked and **matched**.
 - `epoch` / `epoch_stake` differ in **old** epochs (e.g. 214), so they're not the
-  in-progress-epoch boundary either — they're the missing-migration fixes (§A2, §A3).
+  in-progress-epoch boundary either - they're the missing-migration fixes (§A2, §A3).
 - Both DBs are bounded to the **same** `epoch ≤ 624`, and `epoch_stake` for those
   epochs is fully computed in both (DB1's tip is epoch 626), so the count delta is
   real data, not a partial-epoch artifact.
@@ -214,7 +251,7 @@ counterpart (§C). It wasn't needed here, but it's the right safeguard.
 ## F. Schema detail: `committee` vs `new_committee`
 
 Both tables exist in both DBs (identical columns); neither has an `epoch_no`
-column — hence the comparator's wrong epoch anchor for `new_committee` (§C):
+column - hence the comparator's wrong epoch anchor for `new_committee` (§C):
 
 - `committee`: `id, gov_action_proposal_id, quorum_numerator, quorum_denominator`
   (created in db-sync stage-2 migration 0037, replacing an earlier shape).
@@ -229,8 +266,8 @@ Both are keyed off a governance proposal, so both are correctly anchored via
 ---
 
 **Bottom line:** the comparator correctly flagged four real data differences that
-map to db-sync issues — three known/fixed ([#2053], [#2118], [migration 0047]) and
-**one previously-unreported regression it discovered** ([`pool_relay.port`](#a4-pool_relayport--signed-16-bit-overflow-️-previously-unreported)) —
+map to db-sync issues - three known/fixed ([#2053], [#2118], [migration 0047]) and
+**one previously-unreported regression it discovered** ([`pool_relay.port`](#a4-pool_relayport--signed-16-bit-overflow-️-the-one-genuine-regression--filed-as-2135), filed as [#2135]) -
 while classifying the rest as expected config/tip differences, and it even
 surfaced one bug in itself (`new_committee`). That is exactly the behaviour a
 release-integrity gate needs.
@@ -240,18 +277,19 @@ release-integrity gate needs.
 ## References
 
 - db-sync **CHANGELOG**: <https://github.com/IntersectMBO/cardano-db-sync/blob/master/CHANGELOG.md>
-- **#2051 / #2053** — era-aware pointer addresses (tx_out): <https://github.com/IntersectMBO/cardano-db-sync/issues/2051> · <https://github.com/IntersectMBO/cardano-db-sync/pull/2053>
-- **#2118** — epoch out_sum/fees numeric-decoder corruption: <https://github.com/IntersectMBO/cardano-db-sync/issues/2118>
-- **#2044** — epoch_stake missing entries: <https://github.com/IntersectMBO/cardano-db-sync/issues/2044>
+- **#2051 / #2053** - era-aware pointer addresses (tx_out): <https://github.com/IntersectMBO/cardano-db-sync/issues/2051> · <https://github.com/IntersectMBO/cardano-db-sync/pull/2053>
+- **#2118** - epoch out_sum/fees numeric-decoder corruption: <https://github.com/IntersectMBO/cardano-db-sync/issues/2118>
+- **#2044** - epoch_stake missing entries: <https://github.com/IntersectMBO/cardano-db-sync/issues/2044>
 - **Migrations** (on-the-wire DDL, incl. 0047 zero-amount epoch_stake delete & 0048 epoch repair): <https://github.com/IntersectMBO/cardano-db-sync/tree/master/cardano-db/test/schema>
 - **Schema** (authoritative): <https://github.com/IntersectMBO/cardano-db-sync/tree/master/cardano-db/src/Cardano/Db/Schema> · reference: <https://github.com/IntersectMBO/cardano-db-sync/blob/master/doc/schema.md>
-- `pool_relay.port` regression: **no** matching CHANGELOG/issue found (candidate to file).
+- **#2135** - `pool_relay.port` signed-16-bit overflow (regression discovered here, root cause `Schema/Core/Pool.hs:224`): <https://github.com/IntersectMBO/cardano-db-sync/issues/2135>
 
 [#2051]: https://github.com/IntersectMBO/cardano-db-sync/issues/2051
 [#2053]: https://github.com/IntersectMBO/cardano-db-sync/pull/2053
 [PR #2053]: https://github.com/IntersectMBO/cardano-db-sync/pull/2053
 [issue #2051]: https://github.com/IntersectMBO/cardano-db-sync/issues/2051
 [#2118]: https://github.com/IntersectMBO/cardano-db-sync/issues/2118
+[#2135]: https://github.com/IntersectMBO/cardano-db-sync/issues/2135
 [#2044]: https://github.com/IntersectMBO/cardano-db-sync/issues/2044
 [CHANGELOG]: https://github.com/IntersectMBO/cardano-db-sync/blob/master/CHANGELOG.md
 [migration 0047]: https://github.com/IntersectMBO/cardano-db-sync/tree/master/cardano-db/test/schema

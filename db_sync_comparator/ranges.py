@@ -111,7 +111,7 @@ def bucket_boundary_ids(conn, spine: str, edges: list[int]) -> list:
     so it's cheap. Returns a list aligned with ``edges``; an entry is ``None`` when
     no row exists at/after that edge. These ids are in the same space as a table's
     bucket anchor column (e.g. ``tx_out.tx_id``), so they can be used directly as
-    ``width_bucket`` thresholds — and because they're computed per database, the
+    ``width_bucket`` thresholds - and because they're computed per database, the
     per-DB thresholds differ (id drift) but **bucket k = the same block range** on
     both, the same property the id-range windows rely on.
     """

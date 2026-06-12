@@ -1,4 +1,4 @@
-# 07 — Performance and scaling
+# 07 - Performance and scaling
 
 > **What's in here:** what actually makes the tool fast or slow on a 500 GB
 > database, the knobs you have, and the honest caveats.
@@ -14,7 +14,7 @@ it isn't, the database falls back to reading the **whole table**.
 
 Most of db-sync's chain-backbone columns (`tx.block_id`, `tx_out.tx_id`,
 `ma_tx_out.tx_out_id`, `tx_in.tx_in_id`) **are** indexed, so windowed comparison
-of those is fast. A few anchor columns are **not** indexed — notably
+of those is fast. A few anchor columns are **not** indexed - notably
 `redeemer.tx_id` and `collateral_tx_out.tx_id`. The tool detects this and prints:
 
 ```
@@ -26,7 +26,7 @@ For those tables a *narrow window* still scans the whole table.
 ### Why this barely matters for a full run
 
 A full release comparison reads essentially the entire history of each table
-anyway. So an unindexed anchor isn't extra cost there — the table would be fully
+anyway. So an unindexed anchor isn't extra cost there - the table would be fully
 scanned regardless. The unindexed-anchor penalty only bites in `--block-range`
 mode (where you *wanted* to touch only a sliver) and in Phase-2 localization. If
 you control the comparison database and want fast windows on those tables, you can
@@ -36,7 +36,7 @@ add an index (see [extending](09-extending-and-limitations.md)).
 
 Translating foreign keys to natural keys ([how it works, idea 1](03-how-it-works.md))
 means joining each table to the ones it points at (`tx`, `datum`, `stake_address`,
-…). For a **full** run — where almost every row participates — PostgreSQL builds an
+…). For a **full** run - where almost every row participates - PostgreSQL builds an
 in-memory hash of the referenced table and streams through: a **hash join**, which
 is efficient at that scale. It only *looks* slow if you run it over a tiny window,
 because it still builds the whole hash up front. That asymmetry is expected and is
@@ -82,29 +82,29 @@ For a **full mainnet run**, the giants (`ma_tx_out` 1.1B, `epoch_stake`/`reward`
 
 ## Resource usage on a full mainnet run (measured)
 
-The comparison is **read-only on the data** — it never writes to either database,
+The comparison is **read-only on the data** - it never writes to either database,
 so it can't corrupt them or grow them permanently. But a full run is heavy in
 three ways, and one of them surprises people:
 
-- **Temporary disk — large and fluctuating.** Translating foreign keys to natural
+- **Temporary disk - large and fluctuating.** Translating foreign keys to natural
   keys hash-joins the giant tables against `tx`/`datum`/`stake_address`. When a
   join's hash table exceeds `work_mem`, PostgreSQL spills it to **temp files**
   under `base/pgsql_tmp`. On a real run this generated **hundreds of GB of temp
-  I/O cumulatively** — measured via `pg_stat_database.temp_bytes`, ~478 GB on one
-  database and ~255 GB on the other — with **tens of GB live at peak**. Because
+  I/O cumulatively** - measured via `pg_stat_database.temp_bytes`, ~478 GB on one
+  database and ~255 GB on the other - with **tens of GB live at peak**. Because
   each query's temp is created during the scan and released when it finishes,
   **free disk space visibly rises and falls** throughout the run. This is the
   usual cause of "why is my disk fluctuating?". Mitigate by keeping ample free
   space (tens of GB; more with more `--workers` or `--full`), capping it with
   PostgreSQL's `temp_file_limit`, or moving it off the data disk via a dedicated
   `temp_tablespaces`.
-- **RAM is mostly server-side.** The client process is tiny (~10–40 MB; the run
+- **RAM is mostly server-side.** The client process is tiny (~10-40 MB; the run
   measured ~11 MB resident) because all the work happens inside PostgreSQL. The
   server's peak is roughly `workers × (concurrent hash/sort ops) × work_mem`, plus
   `shared_buffers`, plus OS page cache for the scans. Raising `--work-mem` cuts
   temp-disk spill at the cost of RAM; the two trade off directly.
 - **CPU + disk read bandwidth.** Sustained sequential reads of the whole ~500 GB
-  plus `md5` across cores — expect the run to saturate disk reads.
+  plus `md5` across cores - expect the run to saturate disk reads.
 
 Quick way to see the temp pressure yourself, during or after a run:
 
@@ -116,7 +116,7 @@ FROM pg_stat_database WHERE datname LIKE 'mainnet%';
 **Rule of thumb:** tight on disk → raise `--work-mem`, lower `--workers`; tight on
 RAM → keep `--work-mem` modest, lower `--workers` (and make sure there's temp
 disk); plenty of both → more `--workers` for speed. Avoid `--full` on mainnet
-unless you have the disk and the hours — it deep-joins the 1.1B-row `ma_tx_out`
+unless you have the disk and the hours - it deep-joins the 1.1B-row `ma_tx_out`
 and multiplies temp usage.
 
 ## Localizing a mismatch: `--localize bisect` vs `--localize buckets`
@@ -129,23 +129,29 @@ giant tables.
 
 In the mainnet run, the only differing giant was `tx_out` (346M rows, the pointer
 addresses). Pinpointing it with the default method took a large chunk of the
-**9h42m** total — because of *how* the default works.
+**9h42m** total - because of *how* the default works.
 
-### `bisect` (default) — simple, but re-scans
+A measured back-to-back comparison on a 23.2M-row `tx_out` slice
+(`--cutoff-block 6000000`, both algorithms, single worker) makes the gap concrete:
+**both localized to the same two regions**, but the localization phase took
+**~95 min with `bisect` vs ~8 min with `buckets` (≈11×)** - the full numbers are in
+[`benchmarks/buckets-vs-bisect-2026-06-05.md`](../benchmarks/buckets-vs-bisect-2026-06-05.md).
+
+### `bisect` (default) - simple, but re-scans
 
 Think of the "guess my number" game: hash the whole block range, then hash each
 half, keep the half that differs, halve again, and so on until the window is
-narrow. It's tiny code and reuses the normal hashing — but **each level re-runs a
+narrow. It's tiny code and reuses the normal hashing - but **each level re-runs a
 hash query over the data.** A row at block 7M gets scanned again at *every* level
 it falls inside, so a 346M-row table effectively gets scanned many times. Fine for
 small/medium tables; slow on a giant.
 
-### `buckets` (opt-in) — one pass
+### `buckets` (opt-in) - one pass
 
 `--localize buckets` instead chops the chain into ~1000 fixed windows up front
 (e.g. ~13k blocks each on mainnet) and computes the hash of **every** window in a
 **single scan** of the table (one `GROUP BY`), on each database. Then it just
-lines up the ~1000 window-hashes — the windows whose hashes differ are your
+lines up the ~1000 window-hashes - the windows whose hashes differ are your
 answer. **No re-scans.**
 
 The analogy: instead of repeatedly cutting a deck in half to find one marked card
@@ -161,7 +167,7 @@ db-sync-compare --db1 ... --db2 ... --localize buckets --localize-buckets 2000  
 
 Buckets are defined by **block ranges**, but each row is filed into its bucket by
 its cheap **id** column (the same `tx_id`/`tx_out_id` the id-range windows use, so
-no extra joins). For each database we precompute the id at each block edge — the
+no extra joins). For each database we precompute the id at each block edge - the
 boundaries differ between the databases (id drift), but **bucket *k* = the same
 block range on both**, so comparing bucket *k* to bucket *k* compares the same
 slice of chain. (Same trick, and same correctness property, as the id-range
@@ -177,14 +183,19 @@ windowing in [doc 03](03-how-it-works.md).)
   (negligible RAM); the table's FK-translation joins behave exactly like one
   Phase-1 pass.
 - **Non-authoritative:** like all localization, it only reports *where* a mismatch
-  is — it never changes a table's `MATCH`/`DIFF` verdict or the exit code. So the
+  is - it never changes a table's `MATCH`/`DIFF` verdict or the exit code. So the
   choice of algorithm is purely about speed/precision, never correctness.
+- **Only runs in cutoff mode.** Both algorithms are Phase 2, and Phase 2 is skipped
+  entirely under `--block-range` (that mode is already a narrow window, so there is
+  nothing to localize). To exercise either algorithm, run a normal/cutoff
+  comparison - bound it with `--cutoff-block N` if you want it quick. `--localize`
+  has no effect when `--block-range` is set.
 - **Default stays `bisect`**, so existing runs are unchanged.
 
-## Would a faster language (Rust, Go, C++) help? — no, the client isn't the bottleneck
+## Would a faster language (Rust, Go, C++) help? - no, the client isn't the bottleneck
 
 A natural question: this tool is written in Python; would rewriting it in Rust
-make a mainnet comparison "way faster"? **No — it would make essentially no
+make a mainnet comparison "way faster"? **No - it would make essentially no
 difference**, and the reason is the whole design.
 
 Every expensive operation runs **inside PostgreSQL**: the `md5` hashing of
@@ -195,7 +206,7 @@ the result, and orchestrates threads. It then **blocks, waiting on the database.
 
 The measurement makes this concrete. On a full mainnet run, the Python client
 used about **18 seconds of CPU across ~5 hours of wall-clock** (≈0.1% CPU) and
-~13 MB RAM — i.e. it sat idle waiting on PostgreSQL **~99.9%** of the time. A Rust
+~13 MB RAM - i.e. it sat idle waiting on PostgreSQL **~99.9%** of the time. A Rust
 rewrite would shave a few of those 18 seconds; against a multi-hour run that is
 invisible.
 
@@ -206,7 +217,7 @@ Two clarifications:
   parallelism already works. A compiled language's threading adds nothing the
   database isn't already gating.
 - **The one case where the language *would* matter** is the *naive* design this
-  tool rejects — pulling every row to the client and hashing it in-process. There,
+  tool rejects - pulling every row to the client and hashing it in-process. There,
   client CPU dominates and Rust would crush Python. But that design also ships
   terabytes over the wire, which is exactly why we hash server-side instead. Once
   the heavy work is in the database, the client language is irrelevant.
@@ -214,16 +225,16 @@ Two clarifications:
 **What actually speeds it up** is all database-side (see the rest of this doc):
 PostgreSQL parallel query (`max_parallel_workers_per_gather`, so one big hash scan
 uses several cores), more RAM / faster disk, higher `work_mem` to cut temp spill,
-and — the biggest algorithmic win — avoiding the Phase-2 re-scans by computing
+and - the biggest algorithmic win - avoiding the Phase-2 re-scans by computing
 per-range hashes in a single pass (a true Merkle tree) instead of re-hashing a
 giant table at each bisection level.
 
 ## The honest caveat: the near-tip rollback zone
 
 The id-range window ([how it works, idea 3](03-how-it-works.md)) assumes row
-`id`s run in chain order, so that "ticket numbers `a`–`b`" exactly equals "blocks
-`x`–`y`". That holds for **settled history**. In the last few thousand blocks —
-the rollback zone — a database may have re-inserted rows out of strict order, so a
+`id`s run in chain order, so that "ticket numbers `a`-`b`" exactly equals "blocks
+`x`-`y`". That holds for **settled history**. In the last few thousand blocks -
+the rollback zone - a database may have re-inserted rows out of strict order, so a
 tight id-range there could include or exclude a few neighbouring rows. The tool
 guards against this by comparing only up to the **common boundary minus a margin**
 (`--epoch-margin`, default 2 epochs), keeping the comparison in settled territory.
@@ -232,9 +243,9 @@ Don't set the cutoff right at the tip.
 For block-anchored tables there is the matching `--block-margin` knob (default 0):
 set it to pull the block cutoff back below the lower tip by roughly the security
 parameter `k` (≈2160 on mainnet) when one database's tip sits in the volatile
-rollback zone. (In the validation run this wasn't the cause of any mismatch —
+rollback zone. (In the validation run this wasn't the cause of any mismatch -
 the only block-anchored difference, in `tx_out`, was a real pointer-address
-encoding fix at block ~7M, not a near-tip artifact — but the knob is there when
+encoding fix at block ~7M, not a near-tip artifact - but the knob is there when
 you do compare close to a tip.)
 
 **Next:** [Case study: the pool-relay port bug →](08-case-study-pool-relay-port.md)

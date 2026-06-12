@@ -1,4 +1,4 @@
-# Full mainnet comparison — measured benchmark
+# Full mainnet comparison - measured benchmark
 
 - Date (UTC): 2026-06-05
 - DB1 (13.6.0.5) tip: block 13313031, epoch 626
@@ -8,7 +8,7 @@
 - **Total wall-clock: 9h42m01s (34921s)**
 - Tables: 45 match, 7 discrepancies, 6 accumulator count-deltas (informational), 1 errors
 
-> **Every difference is explained — see the full root-cause writeup in [INVESTIGATION-13.6.0.5-vs-13.7.1.0.md](INVESTIGATION-13.6.0.5-vs-13.7.1.0.md).** Highlights: the tool caught three known/fixed db-sync issues (pointer addresses #2053, epoch out_sum/fees #2118, epoch_stake zero-amount cleanup) and one **previously-unreported regression it discovered** (`pool_relay.port` signed-16-bit overflow in 13.7.1.0).
+> **Every difference is explained - see the full root-cause writeup in [INVESTIGATION-13.6.0.5-vs-13.7.1.0.md](INVESTIGATION-13.6.0.5-vs-13.7.1.0.md).** Highlights: the tool caught three known/fixed db-sync issues (pointer addresses #2053, epoch out_sum/fees #2118, epoch_stake zero-amount cleanup) and one **previously-unreported regression it discovered** (`pool_relay.port` signed-16-bit overflow in 13.7.1.0).
 
 ## Findings & root causes
 

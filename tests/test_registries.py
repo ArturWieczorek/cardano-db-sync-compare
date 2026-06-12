@@ -71,3 +71,20 @@ def test_new_committee_anchored_via_gov_action_proposal():
     assert ANCHORS["new_committee"] == ("gap_fk", "gov_action_proposal_id")
     kind, spine, col, _ = build_anchor(ANCHORS["new_committee"])
     assert (kind, spine, col) == ("idrange", "gov_action_proposal", "gov_action_proposal_id")
+
+
+def test_address_variant_fk_and_natural_key():
+    """Address (use_address_table) variant: outputs reference a separate
+    `address` table via `address_id`, whose natural key is the raw address
+    bytes. Without this the FK is UNMAPPED and the address never compared."""
+    assert resolve_fk("tx_out", "address_id") == "address"
+    assert resolve_fk("collateral_tx_out", "address_id") == "address"
+    assert NATURAL_KEYS["address"] == [("col", "raw")]
+
+
+def test_address_is_accumulator():
+    # The address table is a monotonic identity/dictionary table (one row per
+    # distinct address, first-seen), so it has no clean chain anchor.
+    from db_sync_comparator.registries import ANCHORS
+
+    assert ANCHORS["address"] == ("accumulator",)

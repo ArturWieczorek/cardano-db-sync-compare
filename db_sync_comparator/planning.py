@@ -21,7 +21,7 @@ from db_sync_comparator.registries import (
 )
 from db_sync_comparator.sql import JoinBuilder, build_anchor, natural_key_exprs, quote_ident
 
-# FK-resolution depth budget for normal (non-giant) tables — effectively
+# FK-resolution depth budget for normal (non-giant) tables - effectively
 # unbounded for the shallow db-sync schema, but a guard against pathological
 # chains.
 _NORMAL_MAX_DEPTH = 8
@@ -52,7 +52,7 @@ def plan_table(
     kind = "giant" if is_giant else "normal"
     max_depth = giant_fk_depth if is_giant else _NORMAL_MAX_DEPTH
 
-    # Unknown tables default to accumulator (full-table compare) — a safe choice.
+    # Unknown tables default to accumulator (full-table compare) - a safe choice.
     anchor = ANCHORS.get(name, ("accumulator",))
     if anchor[0] == "accumulator" and not is_giant:
         kind = "accumulator"
@@ -64,7 +64,7 @@ def plan_table(
     exprs: list[str] = []
     # Stable, version-independent column order: sort by name.
     for col in sorted(common):
-        if col == "id":  # surrogate PK — always drifts
+        if col == "id":  # surrogate PK - always drifts
             continue
         if col in s1.generated or col in s2.generated:  # e.g. reward.earned_epoch
             continue

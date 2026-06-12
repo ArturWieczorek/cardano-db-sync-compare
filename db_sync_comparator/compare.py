@@ -58,7 +58,7 @@ def compare_table(
             # version writes. Flag clearly and don't bother localizing.
             r.status = "COUNT_DIFF"
             r.note = (
-                f"one side has 0 rows ({r.n1} vs {r.n2}) — table likely disabled in "
+                f"one side has 0 rows ({r.n1} vs {r.n2}) - table likely disabled in "
                 "config (insert_options) for that version, not a data difference"
             )
         elif plan.kind == "accumulator" and r.n1 != r.n2:
@@ -76,7 +76,7 @@ def compare_table(
             r.note = f"value aggregate differs: {r.value1} vs {r.value2}"
         else:
             r.status = "MATCH"
-    except Exception as exc:  # operational, per-table — reported, never fatal
+    except Exception as exc:  # operational, per-table - reported, never fatal
         r.status = "ERROR"
         r.note = f"{type(exc).__name__}: {exc}"
     r.seconds = time.time() - start
@@ -180,7 +180,7 @@ def localize_buckets(
     Splits the chain into ~``n_buckets`` block windows, computes the set-hash per
     bucket in **one scan per DB** (vs the bisection's many re-scans), and reports
     the windows whose hashes differ. Falls back to :func:`localize` when there are
-    too few buckets to be useful (tiny chains). Non-authoritative — like all
+    too few buckets to be useful (tiny chains). Non-authoritative - like all
     localization, it only reports *where*, never the verdict.
     """
     assert plan.spine is not None  # idrange tables always have a spine

@@ -8,7 +8,7 @@ doesn't prove it.
 
 This module verifies it the way a human would: stream the natural-key **set**
 from each database (server-side, index-ordered, memory-bounded) and merge-compare
-them — the equivalent of `comm` on two sorted files. If one side is a clean
+them - the equivalent of `comm` on two sorted files. If one side is a clean
 **subset** of the other, the delta is purely extra rows in the bigger DB
 (consistent with the tip gap); if **neither** is a subset, that's a real
 difference worth investigating.
@@ -47,7 +47,7 @@ def key_query(table: str) -> str | None:
     """Full ``SELECT … ORDER BY … COLLATE "C"`` for the key stream (or ``None``).
 
     ``COLLATE "C"`` forces byte ordering, which is identical on both databases and
-    matches Python's ``str`` comparison for the ASCII keys these columns produce —
+    matches Python's ``str`` comparison for the ASCII keys these columns produce -
     so the two ordered streams can be merge-compared directly.
     """
     expr = accumulator_key_sql(table)
@@ -95,16 +95,16 @@ def merge_compare(it1, it2, max_examples: int = 5) -> dict:
 
 def _verdict(only1: int, only2: int) -> str:
     if only1 == 0 and only2 == 0:
-        return "identical key sets (a count delta would then mean duplicate keys — investigate)"
+        return "identical key sets (a count delta would then mean duplicate keys - investigate)"
     if only2 == 0:
         return (
-            "db2 ⊆ db1 — db1 is a clean superset; delta is extra rows only in db1 (tip-gap-consistent if db1 is ahead)"
+            "db2 ⊆ db1 - db1 is a clean superset; delta is extra rows only in db1 (tip-gap-consistent if db1 is ahead)"
         )
     if only1 == 0:
         return (
-            "db1 ⊆ db2 — db2 is a clean superset; delta is extra rows only in db2 (tip-gap-consistent if db2 is ahead)"
+            "db1 ⊆ db2 - db2 is a clean superset; delta is extra rows only in db2 (tip-gap-consistent if db2 is ahead)"
         )
-    return f"NEITHER is a subset — {only1} keys only in db1 AND {only2} only in db2; NOT a clean tip gap, investigate"
+    return f"NEITHER is a subset - {only1} keys only in db1 AND {only2} only in db2; NOT a clean tip gap, investigate"
 
 
 def verify_accumulator(dsn1: str, dsn2: str, table: str) -> dict:

@@ -1,7 +1,7 @@
 """Hand-built cardano-db-sync schema knowledge.
 
 This is the "very detailed schema analysis": facts about the db-sync schema that
-cannot be introspected from the database and must be encoded by hand —
+cannot be introspected from the database and must be encoded by hand -
 
 * which tables are *not* a deterministic function of the chain (so we skip them),
 * which tables are huge enough to deserve cheaper (tiered) checks,
@@ -10,7 +10,7 @@ cannot be introspected from the database and must be encoded by hand —
 * how each table is **anchored** to a chain coordinate so it can be bounded to a
   common tip.
 
-These tables mirror the db-sync schema but are NOT authoritative — db-sync is.
+These tables mirror the db-sync schema but are NOT authoritative - db-sync is.
 When updating them, cross-check the upstream sources **at the git tag matching the
 db-sync version under comparison** (master drifts ahead of releases):
 
@@ -30,8 +30,8 @@ EXCLUDED_TABLES: dict[str, str] = {
     "schema_version": "per-instance schema bookkeeping",
     "schema_migrations": "per-instance migration log",
     "extra_migrations": "per-instance migration log",
-    "meta": "records this sync's version/start_time — differs by definition",
-    "epoch_sync_time": "wall-clock sync duration per epoch — non-deterministic",
+    "meta": "records this sync's version/start_time - differs by definition",
+    "epoch_sync_time": "wall-clock sync duration per epoch - non-deterministic",
     "reverse_index": "near-tip rollback helper; volatile, id-encoded payload",
     # Off-chain fetchers hit the network: which URLs resolved, when, and the
     # fetched bytes are not a function of the chain. Disabled by default in
@@ -71,7 +71,7 @@ GIANT_TABLES: set[str] = {
 
 # db-sync does NOT create referential FK constraints in PostgreSQL (it would
 # cripple insert/rollback performance), so foreign keys cannot be introspected
-# from information_schema. They are logical, by column name — and the names are
+# from information_schema. They are logical, by column name - and the names are
 # irregular (the Hasql rewrite dropped the `_id` suffix on several: drep_voter,
 # return_address, param_proposal, prev_gov_action_proposal, invalid). We
 # therefore map them explicitly. GLOBAL_FK is column-name -> target for names
@@ -90,6 +90,10 @@ GLOBAL_FK: dict[str, str] = {
     "stake_address_id": "stake_address",
     "reward_addr_id": "stake_address",
     "return_address": "stake_address",
+    # Address (use_address_table) variant only: outputs point at a separate
+    # `address` table. Absent in the Core variant (address is inline in tx_out),
+    # where this column never appears, so the mapping is harmless there.
+    "address_id": "address",
     "voting_anchor_id": "voting_anchor",
     "redeemer_id": "redeemer",
     "redeemer_data_id": "redeemer_data",
@@ -161,6 +165,11 @@ NATURAL_KEYS: dict[str, list[tuple]] = {
     "stake_address": [("col", "hash_raw")],
     "pool_hash": [("col", "hash_raw")],
     "multi_asset": [("col", "policy"), ("col", "name")],
+    # Address (use_address_table) variant only: the raw address bytes are the
+    # content key (deduplicated per distinct address), the analog of
+    # stake_address.hash_raw. Lets address_id translate, and --verify-accumulators
+    # subset-check the address table.
+    "address": [("col", "raw")],
     "datum": [("col", "hash")],
     "script": [("col", "hash")],
     "redeemer_data": [("col", "hash")],
@@ -247,7 +256,7 @@ ANCHORS: dict[str, tuple] = {
     "pool_stat": ("epoch", "epoch_no"),
     "reward": ("epoch", "earned_epoch"),
     "reward_rest": ("epoch", "earned_epoch"),
-    # new_committee is a Conway governance table tied to a proposal — it has
+    # new_committee is a Conway governance table tied to a proposal - it has
     # gov_action_proposal_id (NOT epoch_no), so anchor it like committee.
     "new_committee": ("gap_fk", "gov_action_proposal_id"),
     # Monotonic definition tables with no single clean chain anchor. Compared
@@ -255,6 +264,9 @@ ANCHORS: dict[str, tuple] = {
     "multi_asset": ("accumulator",),
     "stake_address": ("accumulator",),
     "pool_hash": ("accumulator",),
+    # Address (use_address_table) variant only: one row per distinct address,
+    # first-seen, no clean chain anchor - same shape as stake_address/pool_hash.
+    "address": ("accumulator",),
     "drep_hash": ("accumulator",),
     "committee_hash": ("accumulator",),
     "cost_model": ("accumulator",),

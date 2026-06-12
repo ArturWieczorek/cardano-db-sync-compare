@@ -1,4 +1,4 @@
-# Primer 02 — Indexes and table scans
+# Primer 02 - Indexes and table scans
 
 > **What's in here:** why the same question can take a database 2 milliseconds or
 > 3 minutes, depending on whether there's an *index*. This explains why parts of
@@ -24,7 +24,7 @@ table that's tolerable; on a 1.1-**billion**-row table it's a coffee break.
 ## An index is the sorted tab
 
 An **index** is an extra, behind-the-scenes structure the database keeps that
-*is* sorted by a particular column — like the alphabetical thumb-tabs on a
+*is* sorted by a particular column - like the alphabetical thumb-tabs on a
 dictionary, or the index at the back of a textbook. If there's an index on
 `block_no`, the database can jump straight to the rows it wants instead of
 reading everything.
@@ -42,16 +42,16 @@ Two facts that matter for this tool:
 Because an index is *sorted*, it doesn't just help with "= this value". It also
 makes these fast:
 
-- `min(col)` / `max(col)` — jump to the first / last entry of the sorted index.
-- `WHERE col BETWEEN a AND b` — jump to `a`, read until `b`, stop.
+- `min(col)` / `max(col)` - jump to the first / last entry of the sorted index.
+- `WHERE col BETWEEN a AND b` - jump to `a`, read until `b`, stop.
 
 This is exactly how the tool restricts a comparison to one stretch of the
-blockchain quickly — *if* the right column is indexed.
+blockchain quickly - *if* the right column is indexed.
 
 ## The trap that cost us 3 minutes (a real story)
 
 This tool needs to ask things like: *"what is the smallest and largest transaction
-`id` among the transactions in blocks 8,000,000–8,010,000?"*
+`id` among the transactions in blocks 8,000,000-8,010,000?"*
 
 The transactions table (`tx`, 121 million rows) has an index on `block_id` (the
 block a transaction belongs to) and, of course, on its own `id`. We first wrote
@@ -63,7 +63,7 @@ SELECT min(id), max(id) FROM tx WHERE block_id BETWEEN 8000177 AND 8010177;
 
 This took **over 3 minutes**. Why? The database decided to use the index on `id`
 (because we asked for `min(id)`/`max(id)`), walking it from the very top
-downwards, checking each row's `block_id` to see if it's in range — and the
+downwards, checking each row's `block_id` to see if it's in range - and the
 matching rows are 113 million entries deep. It used the *wrong* sorted list.
 
 We rephrased it to *seek* using the `block_id` index instead:
@@ -85,9 +85,9 @@ right index is most of the performance work in this tool.
 
 ## Vocabulary you'll see in the other docs
 
-- **sequential scan / full table scan** — reading every row (no helpful index).
-- **index scan / index seek** — jumping to the rows you want via a sorted index.
-- **"the anchor column isn't indexed"** — a warning the tool prints when a table's
+- **sequential scan / full table scan** - reading every row (no helpful index).
+- **index scan / index seek** - jumping to the rows you want via a sorted index.
+- **"the anchor column isn't indexed"** - a warning the tool prints when a table's
   filter column has no index, so narrowing it to a chain window falls back to a
   full scan. (Details in [performance and scaling](../07-performance-and-scaling.md).)
 

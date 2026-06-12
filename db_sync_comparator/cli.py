@@ -17,7 +17,12 @@ from db_sync_comparator.db import connect
 from db_sync_comparator.model import TablePlan, TableResult
 from db_sync_comparator.planning import plan_table
 from db_sync_comparator.ranges import compute_spine_ranges, get_tip
-from db_sync_comparator.report import build_json_report, print_summary, write_json_report
+from db_sync_comparator.report import (
+    build_json_report,
+    format_db_label,
+    print_summary,
+    write_json_report,
+)
 from db_sync_comparator.schema import indexed_columns, introspect
 from db_sync_comparator.sql import bound_predicate, hash_sql
 from db_sync_comparator.verify import verify_accumulator
@@ -55,7 +60,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="epochs to subtract from the cutoff epoch (avoid the in-progress epoch)",
     )
     ap.add_argument(
-        "--block-range", help="LO:HI — compare only this block window (skips epoch tables); great for fast validation"
+        "--block-range",
+        help="LO:HI - compare only this block window (skips epoch tables); great for fast validation. "
+        "Skips Phase 2 localization (the window is already narrow); use cutoff mode + --cutoff-block to localize",
     )
     ap.add_argument("--tables", help="comma-separated subset of tables to compare")
     ap.add_argument("--no-localize", action="store_true", help="skip localization of mismatches")
@@ -64,7 +71,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         choices=["bisect", "buckets"],
         default="bisect",
         help="localization algorithm for mismatches: 'bisect' (re-hash halves; default) or "
-        "'buckets' (one-pass per-bucket hash — much faster on giant tables)",
+        "'buckets' (one-pass per-bucket hash - much faster on giant tables). No effect with --block-range",
     )
     ap.add_argument(
         "--localize-buckets",
@@ -118,7 +125,7 @@ def _print_plan(plans: list[TablePlan], ranges1: dict, cutoff_epoch: int, in_blo
         elif p.anchor_kind == "epoch":
             print(f"  anchor: epoch on {p.epoch_expr}")
         else:
-            print("  anchor: none (accumulator — full-table compare)")
+            print("  anchor: none (accumulator - full-table compare)")
         if p.skipped_cols:
             print(f"  columns dropped (FK over depth budget): {p.skipped_cols}")
         if p.extra_cols:
@@ -141,6 +148,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"connection failed: {exc}", file=sys.stderr)
         return 2
 
+    db1_label = format_db_label(c1.info.dbname, c1.info.host)
+    db2_label = format_db_label(c2.info.dbname, c2.info.host)
+
     schema1 = introspect(c1)
     schema2 = introspect(c2)
     common_cols = {t: set(schema1[t].columns) & set(schema2[t].columns) for t in set(schema1) & set(schema2)}
@@ -160,8 +170,8 @@ def main(argv: list[str] | None = None) -> int:
     print("=" * 78)
     print("cardano-db-sync database comparison")
     print("=" * 78)
-    print(f"DB1 tip: block {bn1}, epoch {en1}")
-    print(f"DB2 tip: block {bn2}, epoch {en2}")
+    print(f"DB1: {db1_label}  (tip block {bn1}, epoch {en1})")
+    print(f"DB2: {db2_label}  (tip block {bn2}, epoch {en2})")
     print(
         f"common boundary: block_no <= {cutoff_block}, epoch_no <= {cutoff_epoch}"
         + (f"   (block window {block_range[0]}..{block_range[1]})" if block_range else "")
@@ -222,7 +232,7 @@ def main(argv: list[str] | None = None) -> int:
                 + (f"  {r.note}" if r.note and r.status != "MATCH" else "")
             )
 
-    # Phase 2: localize chain-anchored mismatches only — skip accumulators and
+    # Phase 2: localize chain-anchored mismatches only - skip accumulators and
     # one-sided-zero tables (a feature disabled in config isn't worth bisecting).
     mismatches = [
         r
@@ -270,13 +280,25 @@ def main(argv: list[str] | None = None) -> int:
                         f" → {r.verify['verdict']}"
                     )
                 else:
-                    print(f"  {r.name}: not verified — {r.verify.get('reason')}")
+                    print(f"  {r.name}: not verified - {r.verify.get('reason')}")
 
     hard, errors = print_summary(results, excluded)
 
     if args.json_path:
         report = build_json_report(
-            bn1, en1, bn2, en2, cutoff_block, cutoff_epoch, block_range, only_db1, only_db2, excluded, results
+            db1_label,
+            db2_label,
+            bn1,
+            en1,
+            bn2,
+            en2,
+            cutoff_block,
+            cutoff_epoch,
+            block_range,
+            only_db1,
+            only_db2,
+            excluded,
+            results,
         )
         write_json_report(args.json_path, report)
 

@@ -7,6 +7,20 @@ import json
 from db_sync_comparator.model import TablePlan, TableResult
 
 
+def format_db_label(dbname: str | None, host: str | None = None) -> str:
+    """A short, secret-free label identifying a database in the report.
+
+    Uses the resolved database name (never the raw conninfo, which may carry a
+    password). A real TCP ``host`` is appended to disambiguate same-named
+    databases on different servers; a local Unix-socket host (a path) is omitted
+    as noise.
+    """
+    name = dbname or "?"
+    if host and not host.startswith("/"):
+        return f"{name}@{host}"
+    return name
+
+
 def print_summary(results: list[TableResult], excluded: list[TablePlan]) -> tuple[list[TableResult], list[TableResult]]:
     """Print the final summary and return ``(hard_discrepancies, errors)``.
 
@@ -32,7 +46,7 @@ def print_summary(results: list[TableResult], excluded: list[TablePlan]) -> tupl
     if hard:
         print("\nDISCREPANCIES:")
         for r in hard:
-            print(f"  {r.name}: {r.status} — {r.note}")
+            print(f"  {r.name}: {r.status} - {r.note}")
             for line in r.localized:
                 print(f"      -> {line}")
             if r.skipped_cols:
@@ -46,6 +60,8 @@ def print_summary(results: list[TableResult], excluded: list[TablePlan]) -> tupl
 
 
 def build_json_report(
+    db1: str,
+    db2: str,
     bn1: int,
     en1: int,
     bn2: int,
@@ -58,8 +74,15 @@ def build_json_report(
     excluded: list[TablePlan],
     results: list[TableResult],
 ) -> dict:
-    """Assemble the structured report written by ``--json``."""
+    """Assemble the structured report written by ``--json``.
+
+    ``db1`` / ``db2`` are the secret-free database labels (see
+    ``format_db_label``) so a saved report says *which* databases it compared,
+    not just "DB1 vs DB2".
+    """
     return {
+        "db1": db1,
+        "db2": db2,
         "db1_tip": {"block": bn1, "epoch": en1},
         "db2_tip": {"block": bn2, "epoch": en2},
         "cutoff": {"block": cutoff_block, "epoch": cutoff_epoch},

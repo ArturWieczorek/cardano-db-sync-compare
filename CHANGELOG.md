@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Address-variant (`use_address_table`) support.** When db-sync is run with
+  `tx_out.use_address_table: true`, outputs reference a separate `address` table
+  via `address_id` instead of carrying the address inline. The comparator now
+  knows this: `address_id` is mapped to the `address` table (`GLOBAL_FK`), the
+  `address` table's natural key is its raw bytes (`NATURAL_KEYS["address"] =
+  raw`), and it is anchored as an accumulator. Previously `address_id` was
+  flagged `UNMAPPED` and dropped - so the per-output address was never compared -
+  and the `address` table could not be subset-checked by
+  `--verify-accumulators`. The fix is additive and Core-variant-safe: neither the
+  column nor the table exists in the Core layout, so the new entries are simply
+  never consulted there.
+- **Reports now identify the databases they compared.** The run header prints
+  `DB1: <name>` / `DB2: <name>` (instead of an anonymous `DB1 tip:`), and the
+  `--json` report carries top-level `db1` / `db2` fields. The label is the
+  resolved database name (plus `@host` only for a real TCP host), taken from the
+  live connection - never the raw conninfo, so a password can never leak into a
+  report. A saved `.log` or `.json` now says *which* databases (and thus which
+  db-sync versions) it relates to, not just "DB1 vs DB2".
+
+### Documentation
+
+- **Added two programmer-facing docs on the tool's own code**: `docs/11-the-code-end-to-end.md`
+  (a module tour and a step-by-step walkthrough of `main()` tied to real functions: connect,
+  introspect, cutoff/ranges, plan, Phase 1 thread pool, Phase 2 localization, verify, report,
+  exit codes; plus how data is obtained, the verdict decision ladder, and a standards/guarantees
+  summary) and `docs/12-the-generated-sql-annotated.md` (real captured `--plan` SQL for
+  `pool_relay`, `tx_out`, and `ma_tx_out`, dissected piece by piece - bound predicate,
+  FK-translation joins, row fingerprint, set hash, the numeric value proof, and the bucketed
+  variant). Listed under a new "going into the code" section in the docs index.
+- **Added three beginner primers on db-sync database internals**, for readers new to
+  both databases and db-sync: `docs/primers/06-migrations-and-schema-stages.md`
+  (what a migration is, the `migration-STAGE-NNNN` naming, the four stages,
+  `schema_version`, Initial vs near-tip + `--force-indexes`, schema-change vs data-fix
+  migrations), `docs/primers/07-how-db-sync-loads-fast.md` (deferred indexes/constraints,
+  `UNNEST` bulk inserts, batch-per-transaction, in-memory caches, rollback-by-delete),
+  and `docs/primers/08-column-types-and-saving-space.md` (custom DOMAIN types and the
+  `tx_out` consumed/prune option). Same simple-language, analogy-driven voice as the
+  existing primers, with real db-sync file-path citations.
+- **Regrouped the docs index** (`docs/00-start-here.md`, `docs/README.md`) into three
+  labelled groups - Foundations, cardano-db-sync explained, and The comparison tool -
+  so db-sync knowledge and tool knowledge are clearly separated. No files were moved;
+  the primer "Next:" chain now reads 03 → 04 → 06 → 07 → 08 → 05 → core.
+- **Documented that `--block-range` skips Phase 2 localization.** The skip is by
+  design (the window is already narrow, so there is nothing to localize), but it was
+  undocumented and easy to trip over - `--localize`/`--localize-buckets` have no
+  effect under `--block-range`; use cutoff mode (optionally `--cutoff-block N`) to
+  localize. Clarified in the CLI help, `docs/05`, `docs/03`, `docs/07`, and README.
+- **Added the crisp two-phase framing** to `docs/03` and the README: Phase 1 answers
+  *"is there a difference?"*, Phase 2 (localization) answers *"where is it?"*.
+- **Added a measured localization benchmark**
+  (`benchmarks/buckets-vs-bisect-2026-06-05.md`): on a 23.2M-row `tx_out` slice both
+  algorithms localized to the same two regions, with `buckets` ≈ **11× faster** on
+  the localization phase (~8 min vs ~95 min). `docs/07` now cites these numbers.
+
 ### Fixed
 
 - **`new_committee` anchor.** It was registered as epoch-anchored, but the table
@@ -19,7 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **One-sided-zero tables are flagged, not localized.** When a table has rows in
   one database and **0** in the other, the result now says *"likely disabled in
   config (insert_options) for that version, not a data difference"* and Phase 2
-  skips bisecting it. (Real case: `pool_stat` 0 vs 1.13M — the older build ran
+  skips bisecting it. (Real case: `pool_stat` 0 vs 1.13M - the older build ran
   with the `pool_stat` insert option off.)
 - **`--block-margin N`** option: pull the block cutoff back below the lower tip
   by N blocks to stay out of the volatile near-tip rollback zone (mainnet
@@ -29,11 +85,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`--localize {bisect,buckets}`** (default `bisect`, unchanged) — a pluggable
+- **`--localize {bisect,buckets}`** (default `bisect`, unchanged) - a pluggable
   Phase-2 localization algorithm. `buckets` splits the chain into ~`--localize-buckets`
   (default 1024, cap 5000) fixed windows and computes every window's set-hash in a
   **single scan per DB** (one `GROUP BY`), instead of the bisection's repeated
-  re-scans — much faster, and less CPU/IO/temp-disk, on giant tables like `tx_out`.
+  re-scans - much faster, and less CPU/IO/temp-disk, on giant tables like `tx_out`.
   Buckets are keyed by the cheap id column but defined by block ranges (per-DB id
   boundaries, same chain range on both), reusing the id-range machinery. Localization
   is non-authoritative, so this never affects a verdict or exit code. New
@@ -42,7 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a fixture e2e test (inject a fault in a known block, assert both `bisect` and
   `buckets` localize to it). Docs: `docs/07` (full why/what/how), `docs/05`, `docs/03`.
 
-- **`--verify-accumulators`** (opt-in) — for accumulator `COUNT_DIFF`s, stream
+- **`--verify-accumulators`** (opt-in) - for accumulator `COUNT_DIFF`s, stream
   both natural-key sets (server-side, index-ordered, memory-bounded) and
   merge-compare them, reporting `only_db1` / `only_db2`. A clean subset means the
   delta is purely tip-gap extra rows; if neither side is a subset it's a real
@@ -53,8 +109,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **End-to-end fixture tests against a real PostgreSQL** (`tests/test_fixture_e2e.py`,
   marker `fixture`). Two miniature "db-sync-shaped" databases are seeded with
   identical chain content but **drifted surrogate ids** and a **tip gap**, then
-  individual tests inject one fault each — a corrupted value, a dropped row, the
-  real `pool_relay.port` signed-16-bit overflow, an extra accumulator row — and
+  individual tests inject one fault each - a corrupted value, a dropped row, the
+  real `pool_relay.port` signed-16-bit overflow, an extra accumulator row - and
   assert the tool returns `MATCH` / `HASH_DIFF` / `COUNT_DIFF` and localizes
   correctly. PostgreSQL (not SQLite) because the generated SQL is Postgres-specific;
   provided by pytest-postgresql locally or a service container in CI
@@ -67,9 +123,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read-only on the data but FK-translation hash joins **spill hundreds of GB of
   PostgreSQL temp files** (measured ~478 GB / ~255 GB cumulative on the two
   mainnet DBs), which is why free disk space fluctuates; client RAM is negligible
-  (~10–40 MB). Expanded resource detail in `docs/07-performance-and-scaling.md`.
+  (~10-40 MB). Expanded resource detail in `docs/07-performance-and-scaling.md`.
 
-## [0.1.0] — 2026-06-05
+## [0.1.0] - 2026-06-05
 
 First release: a content-equivalence comparator for two cardano-db-sync
 PostgreSQL databases, designed to be a pre-release data-integrity gate on
@@ -87,20 +143,20 @@ regression.
   and **translates every foreign key to the version-stable natural key** of the
   row it points at (block hash, tx hash, (policy, asset name), …), resolving FK
   chains recursively. db-sync declares no FK constraints in PostgreSQL, so the
-  logical foreign keys — including irregular names like `drep_voter`,
-  `return_address`, `param_proposal` — are mapped by hand in
+  logical foreign keys - including irregular names like `drep_voter`,
+  `return_address`, `param_proposal` - are mapped by hand in
   `registries.py`; an unmapped `*_id` is excluded and flagged, never hashed raw.
 - **Order-independent, duplicate-safe set hash, computed server-side.** Each row
   is MD5'd over its normalized columns; the digest is split into two 60-bit
   halves and summed as `numeric`. Two tables hash equal iff they are the same
-  multiset of rows — no sort, no client-side memory, only a count and two numbers
+  multiset of rows - no sort, no client-side memory, only a count and two numbers
   cross the wire. (Same family as Percona `pt-table-checksum` / Datafold
   `data-diff`.)
 - **Common-tip bounding via indexed id-range windows.** The two databases are
   usually at different tips, so the comparison is bounded to the lower tip. The
   bound is applied per table as an indexed `BETWEEN` on a precomputed
   surrogate-id range (derived by walking `block → tx → tx_out` with index seeks),
-  rather than joining each table up to `block` — which avoids whole-table scans.
+  rather than joining each table up to `block` - which avoids whole-table scans.
 - **Tiered effort on the giant tables.** `ma_tx_out` (~1.1B rows),
   `epoch_stake`/`reward` (~450M), `tx_out`/`tx_in` (~340M) get row count + a
   numeric sum/min/max proof + a shallow normalized hash by default; `--full`
@@ -127,12 +183,12 @@ regression.
 - **pytest suite** covering the pure logic: FK resolution and registry
   invariants, SQL generation and quoting, natural-key expansion with depth
   limiting, plan classification and tiering, the jsonb value-column guard, and
-  argument parsing — plus opt-in end-to-end tests gated behind
+  argument parsing - plus opt-in end-to-end tests gated behind
   `DBSYNC_COMPARE_TEST_DSN1/2`.
 - **Quality gate**: ruff (lint + format), mypy, pytest, wired into a `Makefile`,
-  `.pre-commit-config.yaml`, and a GitHub Actions matrix (Python 3.10–3.12).
-- **Documentation** (`docs/`): a from-zero explanation — primers on indexes,
-  hashing, Cardano/db-sync, and surrogate-id drift — followed by the design, a
+  `.pre-commit-config.yaml`, and a GitHub Actions matrix (Python 3.10-3.12).
+- **Documentation** (`docs/`): a from-zero explanation - primers on indexes,
+  hashing, Cardano/db-sync, and surrogate-id drift - followed by the design, a
   per-table reference, performance notes, and a worked case study of the
   `pool_relay.port` finding.
 

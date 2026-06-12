@@ -7,9 +7,9 @@ These exercise the *execution* path that the pure-logic unit tests can't:
 The two fixture databases deliberately bake in the structural realities the tool
 exists to handle:
 
-* **surrogate-id drift** — DB2 uses an id offset, so the same logical rows have
+* **surrogate-id drift** - DB2 uses an id offset, so the same logical rows have
   different ``id`` and foreign-key values (a correct comparison must still MATCH);
-* **a tip difference** — DB2 has one extra block beyond the common cutoff, which
+* **a tip difference** - DB2 has one extra block beyond the common cutoff, which
   bounding must exclude.
 
 On top of the matching baseline, individual tests introduce a single deliberate
@@ -17,8 +17,8 @@ fault (a corrupted value, a dropped row, the real pool_relay port overflow, an
 extra accumulator row) and assert the tool classifies it correctly.
 
 Engine choice: a real PostgreSQL (not SQLite) because the tool's whole value is
-the PostgreSQL SQL it generates — ``md5(ROW(...)::text)``, ``::bit(60)::numeric``,
-``information_schema``/``pg_catalog`` — none of which SQLite can run. The server
+the PostgreSQL SQL it generates - ``md5(ROW(...)::text)``, ``::bit(60)::numeric``,
+``information_schema``/``pg_catalog`` - none of which SQLite can run. The server
 is provided by pytest-postgresql locally, or an external server (a CI service)
 when ``DBSYNC_COMPARE_PG_EXTERNAL`` is set.
 
@@ -84,7 +84,7 @@ def _create_schema(conn) -> None:
 
 def _seed_data(conn, off: int, extra_tip: bool, version: str) -> None:
     """Insert identical *logical* content, but with every id (and FK) shifted by
-    ``off`` — modelling two syncs whose surrogate ids drifted. ``extra_tip`` adds
+    ``off`` - modelling two syncs whose surrogate ids drifted. ``extra_tip`` adds
     one block beyond the others (the tip gap)."""
     blocks = range(0, 7 if extra_tip else 6)  # block_no 0..5 (+6 for the ahead DB)
     txs = range(1, 7 if extra_tip else 6)  # one tx per block 1..5 (+6)
@@ -150,7 +150,7 @@ _ALL_TABLES = (
 
 @pytest.fixture(scope="session")
 def _db_dsns(pg_params):
-    """Create two empty databases with the schema — once per session.
+    """Create two empty databases with the schema - once per session.
 
     CREATE DATABASE is the slow part (template copy + checkpoint), so we do it
     once and let each test reseed cheaply via TRUNCATE.
@@ -177,7 +177,7 @@ def two_dbs(_db_dsns):
     """Reset to a clean, matching baseline and yield two open connections.
 
     DB2 carries an id offset (drift) and one extra block beyond the tip. Each
-    test gets a freshly reseeded pair (truncate + reinsert — no CREATE DATABASE),
+    test gets a freshly reseeded pair (truncate + reinsert - no CREATE DATABASE),
     and may then mutate DB2 to model a fault.
     """
     dsn1, dsn2 = _db_dsns
@@ -281,7 +281,7 @@ def test_corrupted_value_is_hash_diff(two_dbs):
     c2.execute("UPDATE tx_out SET value = value + 1 WHERE id = 103")  # one in-range output
     _, result, _ = _compare_one(c1, c2, "tx_out")
     assert result.status == "HASH_DIFF"
-    assert result.n1 == result.n2  # same row count — only a value changed
+    assert result.n1 == result.n2  # same row count - only a value changed
 
 
 def test_dropped_row_is_count_diff(two_dbs):
