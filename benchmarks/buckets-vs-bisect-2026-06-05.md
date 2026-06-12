@@ -68,8 +68,9 @@ correctness (localization is non-authoritative - it never changes a verdict).
 
 ## Artifacts
 
-- `buckets-vs-bisect-2026-06-05.log` - full run log (both algorithms).
-- `buckets-vs-bisect-2026-06-05.bisect.json`, `…buckets.json` - structured reports.
+The raw run log and the structured JSON reports (bisect + buckets) for this
+comparison are kept locally and not shipped in this repo; the numbers and
+conclusions above are the summary.
 
 [#2051]: https://github.com/IntersectMBO/cardano-db-sync/issues/2051
 [#2053]: https://github.com/IntersectMBO/cardano-db-sync/pull/2053

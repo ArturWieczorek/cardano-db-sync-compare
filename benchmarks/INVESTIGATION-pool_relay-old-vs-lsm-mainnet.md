@@ -65,7 +65,7 @@ Every comparable table matched, including `pool_relay` (both wrong identically: 
 negative ports each). This establishes the baseline: **B ≡ C across all data**, so anything
 the later migration changes on C is isolated against an otherwise-identical twin.
 
-### 3. Repair verified — A vs C, post-migration  (`benchmarks/pool_relay-old-vs-lsm-mainnet-2026-06-06.json`)
+### 3. Repair verified — A vs C, post-migration
 
 `pool_relay`-scoped comparison of the known-good 13.6.0.5 (A) against the migrated LSM (C):
 
@@ -100,9 +100,18 @@ overflowed ports, with **zero collateral edits** to any other relay.
 > that key is not unique and produces spurious "violations." The full-row multiset diff (and
 > the tool's row hash) avoid this.
 
-The 1,118 affected relays are preserved as a small, self-contained artifact:
-`benchmarks/pool_relay-port-overflow-affected-relays.csv`
+The 1,118 affected relays were extracted as a small, self-contained CSV
 (`reg_tx_hash, cert_index, ipv4, ipv6, dns_name, dns_srv_name, buggy_port, repaired_port`).
+The full list is kept locally (not shipped in this repo); a representative sample:
+
+```csv
+reg_tx_hash,cert_index,ipv4,ipv6,dns_name,dns_srv_name,buggy_port,repaired_port
+0016f71c1f5a6169d949c83239bd6edee368740d33dec9e6c32c37de2270668e,0,54.39.243.118,,,,-15524,50012
+0031292d4b393215ef65935774c9e1b0d901e5fc026bc1443c61b4caaa36062d,0,194.233.66.179,,,,-27093,38443
+```
+
+Each `buggy_port` is the stored signed-16-bit value; `repaired_port` adds 65536 to the
+negative ones (-15524 + 65536 = 50012, -27093 + 65536 = 38443).
 
 ## On the "dump `pool_relay` before the fix" suggestion
 

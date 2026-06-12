@@ -20,6 +20,10 @@ dist/
 report.json
 *.cmp.json
 
+# Local-only benchmark raw artifacts (logs/json/csv dumps). The curated
+# benchmarks/*.md write-ups stay tracked; raw runs live here, unpublished.
+benchmarks/private/
+
 # Editor / OS
 .vscode/
 .idea/

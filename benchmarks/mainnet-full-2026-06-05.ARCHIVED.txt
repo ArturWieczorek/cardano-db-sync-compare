@@ -1,4 +1,0 @@
-Archived 2026-06-05T09:54:00Z
-START 2026-06-05T00:11:22Z
-FINISHED rc=1 WALL_SECONDS=34921 (9h42m)
-SUMMARY: 45 match, 7 discrepancies, 6 accumulator count-deltas (informational), 1 errors, 16 excluded
