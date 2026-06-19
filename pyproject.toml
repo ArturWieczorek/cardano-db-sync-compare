@@ -1,6 +1,6 @@
 [project]
 name = "cardano-db-sync-compare"
-version = "0.1.0"
+version = "1.0.0"
 description = "Content-equivalence comparator for two cardano-db-sync PostgreSQL databases."
 readme = "README.md"
 requires-python = ">=3.10"

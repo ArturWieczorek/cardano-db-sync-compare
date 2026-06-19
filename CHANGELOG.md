@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-19
+
+First stable release. Builds on 0.1.0 with Address-variant (`use_address_table`)
+support, opt-in accumulator subset verification (`--verify-accumulators`), a
+pluggable Phase-2 localization algorithm (`--localize buckets`, measured ~11×
+faster than bisection on a 23.2M-row slice), reports that name the databases
+they compared, end-to-end fixture tests against a real PostgreSQL, and a much
+expanded documentation set. The public CLI and JSON report are now considered
+stable.
+
 ### Added
 
 - **Address-variant (`use_address_table`) support.** When db-sync is run with
@@ -31,6 +41,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   live connection - never the raw conninfo, so a password can never leak into a
   report. A saved `.log` or `.json` now says *which* databases (and thus which
   db-sync versions) it relates to, not just "DB1 vs DB2".
+- **`--localize {bisect,buckets}`** (default `bisect`, unchanged) - a pluggable
+  Phase-2 localization algorithm. `buckets` splits the chain into ~`--localize-buckets`
+  (default 1024, cap 5000) fixed windows and computes every window's set-hash in a
+  **single scan per DB** (one `GROUP BY`), instead of the bisection's repeated
+  re-scans - much faster, and less CPU/IO/temp-disk, on giant tables like `tx_out`.
+  Buckets are keyed by the cheap id column but defined by block ranges (per-DB id
+  boundaries, same chain range on both), reusing the id-range machinery. Localization
+  is non-authoritative, so this never affects a verdict or exit code. New
+  `localize_buckets` + `ranges.block_edges`/`bucket_boundary_ids` +
+  `sql.hash_sql_bucketed`; unit tests (edge math, bucket SQL, boundary alignment) and
+  a fixture e2e test (inject a fault in a known block, assert both `bisect` and
+  `buckets` localize to it). Docs: `docs/07` (full why/what/how), `docs/05`, `docs/03`.
+- **`--verify-accumulators`** (opt-in) - for accumulator `COUNT_DIFF`s, stream
+  both natural-key sets (server-side, index-ordered, memory-bounded) and
+  merge-compare them, reporting `only_db1` / `only_db2`. A clean subset means the
+  delta is purely tip-gap extra rows; if neither side is a subset it's a real
+  difference. Read-only and off by default. New module `db_sync_comparator/verify.py`
+  + `db.stream_keys`; unit tests for the merge + key SQL, and an end-to-end
+  fixture test. Validated on preview LSM-vs-standard
+  (`benchmarks/INVESTIGATION-preview-lsm-vs-standard.md`).
+- **`--block-margin N`** option: pull the block cutoff back below the lower tip
+  by N blocks to stay out of the volatile near-tip rollback zone (mainnet
+  `k`≈2160). Complements the existing `--epoch-margin`. (Note: this only bounds
+  chain-anchored tables; accumulators have no anchor, so use `--verify-accumulators`
+  for those.)
+- **End-to-end fixture tests against a real PostgreSQL** (`tests/test_fixture_e2e.py`,
+  marker `fixture`). Two miniature "db-sync-shaped" databases are seeded with
+  identical chain content but **drifted surrogate ids** and a **tip gap**, then
+  individual tests inject one fault each - a corrupted value, a dropped row, the
+  real `pool_relay.port` signed-16-bit overflow, an extra accumulator row - and
+  assert the tool returns `MATCH` / `HASH_DIFF` / `COUNT_DIFF` and localizes
+  correctly. PostgreSQL (not SQLite) because the generated SQL is Postgres-specific;
+  provided by pytest-postgresql locally or a service container in CI
+  (`DBSYNC_COMPARE_PG_EXTERNAL`). Run with `make test-db`. The default `make test`
+  stays DB-free.
+- **README operational guide + hardware/resource notes.** How to run a full
+  mainnet comparison in practice: detached from your shell/session, progress
+  streamed to files (`-u` + `run.log`, `--json`), no short `--statement-timeout`,
+  and `--workers`/`--work-mem` tuning. Plus a hardware section: the run is
+  read-only on the data but FK-translation hash joins **spill hundreds of GB of
+  PostgreSQL temp files** (measured ~478 GB / ~255 GB cumulative on the two
+  mainnet DBs), which is why free disk space fluctuates; client RAM is negligible
+  (~10-40 MB). Expanded resource detail in `docs/07-performance-and-scaling.md`.
+
+### Changed
+
+- **One-sided-zero tables are flagged, not localized.** When a table has rows in
+  one database and **0** in the other, the result now says *"likely disabled in
+  config (insert_options) for that version, not a data difference"* and Phase 2
+  skips bisecting it. (Real case: `pool_stat` 0 vs 1.13M - the older build ran
+  with the `pool_stat` insert option off.)
+
+### Fixed
+
+- **`new_committee` anchor.** It was registered as epoch-anchored, but the table
+  has no `epoch_no` column (its key is `gov_action_proposal_id`), which produced
+  a per-table `ERROR` on real databases. Now anchored via `gov_action_proposal_id`
+  like `committee`. Added a regression test.
 
 ### Documentation
 
@@ -66,68 +134,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`benchmarks/buckets-vs-bisect-2026-06-05.md`): on a 23.2M-row `tx_out` slice both
   algorithms localized to the same two regions, with `buckets` ≈ **11× faster** on
   the localization phase (~8 min vs ~95 min). `docs/07` now cites these numbers.
-
-### Fixed
-
-- **`new_committee` anchor.** It was registered as epoch-anchored, but the table
-  has no `epoch_no` column (its key is `gov_action_proposal_id`), which produced
-  a per-table `ERROR` on real databases. Now anchored via `gov_action_proposal_id`
-  like `committee`. Added a regression test.
-
-### Changed
-
-- **One-sided-zero tables are flagged, not localized.** When a table has rows in
-  one database and **0** in the other, the result now says *"likely disabled in
-  config (insert_options) for that version, not a data difference"* and Phase 2
-  skips bisecting it. (Real case: `pool_stat` 0 vs 1.13M - the older build ran
-  with the `pool_stat` insert option off.)
-- **`--block-margin N`** option: pull the block cutoff back below the lower tip
-  by N blocks to stay out of the volatile near-tip rollback zone (mainnet
-  `k`≈2160). Complements the existing `--epoch-margin`. (Note: this only bounds
-  chain-anchored tables; accumulators have no anchor, so use `--verify-accumulators`
-  for those.)
-
-### Added
-
-- **`--localize {bisect,buckets}`** (default `bisect`, unchanged) - a pluggable
-  Phase-2 localization algorithm. `buckets` splits the chain into ~`--localize-buckets`
-  (default 1024, cap 5000) fixed windows and computes every window's set-hash in a
-  **single scan per DB** (one `GROUP BY`), instead of the bisection's repeated
-  re-scans - much faster, and less CPU/IO/temp-disk, on giant tables like `tx_out`.
-  Buckets are keyed by the cheap id column but defined by block ranges (per-DB id
-  boundaries, same chain range on both), reusing the id-range machinery. Localization
-  is non-authoritative, so this never affects a verdict or exit code. New
-  `localize_buckets` + `ranges.block_edges`/`bucket_boundary_ids` +
-  `sql.hash_sql_bucketed`; unit tests (edge math, bucket SQL, boundary alignment) and
-  a fixture e2e test (inject a fault in a known block, assert both `bisect` and
-  `buckets` localize to it). Docs: `docs/07` (full why/what/how), `docs/05`, `docs/03`.
-
-- **`--verify-accumulators`** (opt-in) - for accumulator `COUNT_DIFF`s, stream
-  both natural-key sets (server-side, index-ordered, memory-bounded) and
-  merge-compare them, reporting `only_db1` / `only_db2`. A clean subset means the
-  delta is purely tip-gap extra rows; if neither side is a subset it's a real
-  difference. Read-only and off by default. New module `db_sync_comparator/verify.py`
-  + `db.stream_keys`; unit tests for the merge + key SQL, and an end-to-end
-  fixture test. Validated on preview LSM-vs-standard
-  (`benchmarks/INVESTIGATION-preview-lsm-vs-standard.md`).
-- **End-to-end fixture tests against a real PostgreSQL** (`tests/test_fixture_e2e.py`,
-  marker `fixture`). Two miniature "db-sync-shaped" databases are seeded with
-  identical chain content but **drifted surrogate ids** and a **tip gap**, then
-  individual tests inject one fault each - a corrupted value, a dropped row, the
-  real `pool_relay.port` signed-16-bit overflow, an extra accumulator row - and
-  assert the tool returns `MATCH` / `HASH_DIFF` / `COUNT_DIFF` and localizes
-  correctly. PostgreSQL (not SQLite) because the generated SQL is Postgres-specific;
-  provided by pytest-postgresql locally or a service container in CI
-  (`DBSYNC_COMPARE_PG_EXTERNAL`). Run with `make test-db`. The default `make test`
-  stays DB-free.
-- **README operational guide + hardware/resource notes.** How to run a full
-  mainnet comparison in practice: detached from your shell/session, progress
-  streamed to files (`-u` + `run.log`, `--json`), no short `--statement-timeout`,
-  and `--workers`/`--work-mem` tuning. Plus a hardware section: the run is
-  read-only on the data but FK-translation hash joins **spill hundreds of GB of
-  PostgreSQL temp files** (measured ~478 GB / ~255 GB cumulative on the two
-  mainnet DBs), which is why free disk space fluctuates; client RAM is negligible
-  (~10-40 MB). Expanded resource detail in `docs/07-performance-and-scaling.md`.
 
 ## [0.1.0] - 2026-06-05
 
@@ -196,5 +202,6 @@ regression.
   per-table reference, performance notes, and a worked case study of the
   `pool_relay.port` finding.
 
-[Unreleased]: https://github.com/ArturWieczorek/cardano-db-sync-compare/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/ArturWieczorek/cardano-db-sync-compare/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/ArturWieczorek/cardano-db-sync-compare/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/ArturWieczorek/cardano-db-sync-compare/releases/tag/v0.1.0

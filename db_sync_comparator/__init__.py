@@ -19,4 +19,4 @@ Importing this top-level package does **not** import psycopg, so the pure-logic
 modules can be unit-tested without a database driver installed.
 """
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
