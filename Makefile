@@ -1,8 +1,18 @@
 VENV_DIR := .venv
 ACTIVATE_SCRIPT := $(VENV_DIR)/bin/activate
+PYTHON := $(VENV_DIR)/bin/python
 PKG := db_sync_comparator
 
-.PHONY: help venv install activate shell clean lint format typecheck test test-db check
+# Run all tooling through the venv interpreter so we never fall back to a
+# system-wide pytest/ruff/mypy on $PATH (e.g. a pipx pytest without psycopg).
+# Fails with a clear hint if the venv hasn't been created yet.
+require-venv:
+	@test -x "$(PYTHON)" || { \
+		echo "❌ No virtualenv at $(VENV_DIR). Run 'make install' first."; \
+		exit 1; \
+	}
+
+.PHONY: help venv install activate shell clean lint format typecheck test test-db check require-venv
 
 help:
 	@echo ""
@@ -40,29 +50,29 @@ activate:
 	@echo "👉 To activate the virtual environment manually, run:"
 	@echo "source $(ACTIVATE_SCRIPT)"
 
-lint:
-	ruff check $(PKG) tests
+lint: require-venv
+	$(PYTHON) -m ruff check $(PKG) tests
 
-format:
-	ruff format $(PKG) tests
+format: require-venv
+	$(PYTHON) -m ruff format $(PKG) tests
 
-typecheck:
-	mypy $(PKG) tests
+typecheck: require-venv
+	$(PYTHON) -m mypy $(PKG) tests
 
-test:
-	pytest
+test: require-venv
+	$(PYTHON) -m pytest
 
 # End-to-end tests against a real PostgreSQL. Uses pytest-postgresql to spin a
 # throwaway cluster locally; set DBSYNC_COMPARE_PG_EXTERNAL=1 (+ PG* env) to use
 # an existing server instead.
-test-db:
-	pytest -m fixture
+test-db: require-venv
+	$(PYTHON) -m pytest -m fixture
 
-check:
-	ruff check $(PKG) tests
-	ruff format --check $(PKG) tests
-	mypy $(PKG) tests
-	pytest
+check: require-venv
+	$(PYTHON) -m ruff check $(PKG) tests
+	$(PYTHON) -m ruff format --check $(PKG) tests
+	$(PYTHON) -m mypy $(PKG) tests
+	$(PYTHON) -m pytest
 
 clean:
 	@echo "🧹 Removing virtual environment and caches..."
