@@ -270,8 +270,8 @@ So there are **no surprises** about what a "match" actually covers:
     and the bytes fetched are non-deterministic);
   - **per-instance bookkeeping** - `meta` (this DB's version/start time),
     `schema_version`, `schema_migrations`, `extra_migrations`;
-  - **volatile/operational** - `epoch_sync_time` (wall-clock), `reverse_index`
-    (tip-only rollback helper);
+  - **volatile/operational** - `epoch_sync_time` (wall-clock), `epoch_sync_enabled`
+    (operator toggle), `reverse_index` (tip-only rollback helper);
   - **SMASH operator state** - `delisted_pool`, `reserved_pool_ticker`.
 - **Accumulator tables** (e.g. `multi_asset`, `stake_address`) have no chain anchor,
   so a row-**count** delta there is reported as *informational* (usually the tip

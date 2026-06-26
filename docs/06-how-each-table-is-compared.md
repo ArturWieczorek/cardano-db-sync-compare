@@ -68,7 +68,15 @@ often empty anyway.)
 | Table | What it holds | Why excluded |
 |---|---|---|
 | `epoch_sync_time` | **wall-clock seconds** this db-sync took to sync each epoch | A performance metric of the machine, not the chain. |
+| `epoch_sync_enabled` | single-row toggle: whether epoch aggregation is on | Operator config, not chain-derived (it gates the `epoch` view, below). |
 | `reverse_index` | a near-tip helper that makes **rollbacks** fast | Only near the tip, encodes internal **row-ids** (which drift), and gets pruned - volatile and meaningless to compare. |
+
+> **Note - `epoch` is a view since schema stage-two v49 (`migration-2-0049`).** It
+> is `epoch_finalized UNION ALL epoch_current`. Introspection compares **base
+> tables only**, so the view itself is skipped; the finalized-epoch aggregate
+> (`out_sum`/`fees`/tx & block counts) is compared via the **`epoch_finalized`**
+> base table, bounded by epoch number `no`. `epoch_current` is the volatile,
+> in-progress epoch and stays skipped - which `--epoch-margin` excluded anyway.
 
 ### Group 4 - SMASH operator state (human/admin decisions, not chain)
 
@@ -215,6 +223,7 @@ does this row belong to?"* - either **directly** (the row has a block number) or
 | `tx` | transactions | the block it's in (`block_id`) |
 | `tx_out` | transaction outputs | the block of the tx that created it |
 | `epoch_stake` | per-epoch stake snapshots | its `epoch_no` |
+| `epoch_finalized` | per-epoch aggregates (the `epoch` view's backing table) | its `no` |
 
 These are the **dated diary entries**. Because each row knows its block/epoch, you
 can say *"only compare rows up to block X."*
