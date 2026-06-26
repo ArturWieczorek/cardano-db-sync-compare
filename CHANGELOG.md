@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Reflect the `epoch` view split (schema stage-two v49, `migration-2-0049`).**
+  Upstream cardano-db-sync replaced the `epoch` table with a VIEW
+  (`epoch_finalized UNION ALL epoch_current`), backed by a new `epoch_finalized`
+  base table, and added an `epoch_sync_enabled` operator toggle. Introspection
+  only compares base tables, so on the new schema the `epoch` view is skipped -
+  previously the per-epoch aggregate would have silently dropped out of the
+  comparison. The finalized-epoch aggregate is now compared via `epoch_finalized`,
+  anchored by epoch number `no` (`ANCHORS`) so it is epoch-bounded and
+  localizable rather than treated as an unanchored accumulator. `epoch_sync_enabled`
+  is excluded as operator config (`EXCLUDED_TABLES`); the volatile in-progress
+  `epoch_current` view stays skipped. The legacy `epoch`-table anchor is kept for
+  old-schema / cross-version runs. Covered end-to-end by fixture tests that add an
+  `epoch_finalized` table, an `epoch_sync_enabled` row, and an `epoch` view, and
+  assert the view is dropped, the finalized table is epoch-anchored and matches,
+  and the toggle is excluded.
+
 ## [1.0.0] - 2026-06-19
 
 First stable release. Builds on 0.1.0 with Address-variant (`use_address_table`)
