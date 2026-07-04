@@ -113,6 +113,47 @@ db-sync-compare --db1 ... --db2 ... --json report.json
 | `--verify-accumulators` | off | for accumulator `COUNT_DIFF`s, subset-check the two key sets to confirm a count delta is purely tip-gap extra rows (see [doc 06](06-how-each-table-is-compared.md#how-to-verify-an-accumulator-count_diff-tip-gap-or-real)) |
 | `--json PATH` | - | write a structured JSON report |
 
+### `--workers` and `--work-mem` - you do *not* set these in PostgreSQL
+
+A common misconception: that these need configuring in `postgresql.conf`. **They
+don't - the tool applies both itself.**
+
+Think of each PostgreSQL server as a **kitchen**. Every connection a program opens
+gets a dedicated **cook** (PostgreSQL runs one server process per connection). Your
+queries are the orders.
+
+**`--work-mem SIZE` - the size of each cook's countertop.** `work_mem` is a real
+PostgreSQL setting: how much memory a single sort or hash step may use before
+spilling the overflow to temporary files on disk. The fingerprint's foreign-key
+translation uses **hash joins** - exactly that memory-hungry step - so a bigger
+`work_mem` keeps them in RAM instead of constantly spilling to temp disk (faster).
+You *can* set it globally in `postgresql.conf`, but you don't have to: the tool runs
+`SET work_mem = '...'` on **each connection it opens** (`db.py`). That overrides the
+value for **that one session only** - no config edit, no restart, no superuser, and
+no effect on anyone else or any other connection. When the tool disconnects, it's
+gone.
+
+**`--workers N` - how many orders you place at once.** This is **not a PostgreSQL
+setting at all** - it's pure client-side parallelism. The tool uses a thread pool;
+each worker opens **its own pair of connections** (one to DB1, one to DB2 - that's
+"each uses 2 connections") and compares one table. So `--workers 4` means up to **4
+tables compared at once** over up to 8 connections. You aren't telling PostgreSQL to
+"spin up workers"; you're just opening more connections and firing queries
+concurrently, and because each connection is its own server process, the kitchen
+works on them in parallel.
+
+Two caveats:
+
+- **Memory multiplies.** Total RAM pressure is roughly `workers x connections x
+  work_mem x (hash/sort steps per query)`, so raise `--workers` and `--work-mem`
+  together with an eye on the machine's RAM.
+- **This is a *different* parallelism from PostgreSQL's own.** The server setting
+  `max_parallel_workers_per_gather` lets a **single** query use several CPU cores for
+  one big scan (intra-query). The tool doesn't set that - if you want it, it's a
+  genuine PostgreSQL config. `--workers` is the *other* kind: many queries at once
+  (inter-query), driven by the client. See
+  [performance and scaling](07-performance-and-scaling.md).
+
 ## Reading the output
 
 The header names **both databases** so the log is self-identifying - you can tell

@@ -309,6 +309,13 @@ and - the biggest algorithmic win - avoiding the Phase-2 re-scans by computing
 per-range hashes in a single pass (a true Merkle tree) instead of re-hashing a
 giant table at each bisection level.
 
+Note the two *client* knobs, `--workers` and `--work-mem`, are a different lever and
+you set them on the tool, not in `postgresql.conf`: `--work-mem` is applied per
+connection via `SET work_mem` and `--workers` opens that many parallel
+connection-pairs (many queries at once, *not* one query on many cores like
+`max_parallel_workers_per_gather`). Full explanation in
+[running it](05-running-it.md#--workers-and---work-mem---you-do-not-set-these-in-postgresql).
+
 ## The honest caveat: the near-tip rollback zone
 
 The id-range window ([how it works, idea 3](03-how-it-works.md)) assumes row
