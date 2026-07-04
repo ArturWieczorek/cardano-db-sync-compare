@@ -146,7 +146,7 @@ verify accumulators (opt-in) ─▶ print_summary ─▶ JSON (opt-in) ─▶ ex
   **I/O-bound**: the client fires a query and waits on PostgreSQL, and psycopg releases
   Python's GIL while waiting on the socket, so threads give real concurrency here. (Why
   this also means the client language barely matters:
-  [doc 07](07-performance-and-scaling.md#would-a-faster-language-rust-go-c-help--no-the-client-isnt-the-bottleneck).)
+  [doc 07](07-performance-and-scaling.md#would-a-faster-language-rust-go-c-help---no-the-client-isnt-the-bottleneck).)
 - **Statement timeout** - `--statement-timeout` (0 = none) is applied per query in
   `compare.run_scalar`. Use 0 for full runs; giant-table queries legitimately run over an
   hour.

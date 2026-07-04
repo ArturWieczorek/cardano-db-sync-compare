@@ -128,10 +128,11 @@ spilling the overflow to temporary files on disk. The fingerprint's foreign-key
 translation uses **hash joins** - exactly that memory-hungry step - so a bigger
 `work_mem` keeps them in RAM instead of constantly spilling to temp disk (faster).
 You *can* set it globally in `postgresql.conf`, but you don't have to: the tool runs
-`SET work_mem = '...'` on **each connection it opens** (`db.py`). That overrides the
-value for **that one session only** - no config edit, no restart, no superuser, and
-no effect on anyone else or any other connection. When the tool disconnects, it's
-gone.
+`SET work_mem = '...'` on **each comparison connection it opens** (`db.py`; the only
+exception is the lightweight read-only key-stream connection used by
+`--verify-accumulators`, which doesn't need it). That overrides the value for **that
+one session only** - no config edit, no restart, no superuser, and no effect on anyone
+else or any other connection. When the tool disconnects, it's gone.
 
 **`--workers N` - how many orders you place at once.** This is **not a PostgreSQL
 setting at all** - it's pure client-side parallelism. The tool uses a thread pool;

@@ -197,8 +197,7 @@ are exactly what CI enforces.
 If you touch the comparison logic or the [registries](06-how-each-table-is-compared.md),
 add or extend a test in the matching tier - a unit test for a pure-logic change,
 a `fixture` test if the behaviour only shows up end-to-end. See
-[extending and limitations](09-extending-and-limitations.md) and
-[AGENTS.md](../AGENTS.md).
+[extending and limitations](09-extending-and-limitations.md).
 
 ---
 

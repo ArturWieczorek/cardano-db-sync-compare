@@ -167,9 +167,15 @@ FROM (
   SELECT md5(ROW(j1."policy", j1."name", t0."quantity")::text) AS h
   FROM "ma_tx_out" t0
   LEFT JOIN "multi_asset" j1 ON t0."ident" = j1."id"
+  LEFT JOIN "tx_out" j2 ON t0."tx_out_id" = j2."id"
   WHERE t0."tx_out_id" BETWEEN 1 AND 20356046
 ) q
 ```
+
+The `tx_out` join (`j2`) is still emitted even though `tx_out_id` was dropped in
+Step 2: the join builder registered it before the depth cut. It is harmless - it is a
+`LEFT JOIN` on `tx_out`'s primary key and none of its columns are selected, so it
+changes neither the row set nor the hash. (This is exactly what `--plan` prints.)
 
 Only three numbers (`n, s1, s2`) come back over the wire - that is what makes a
 billion rows feasible. (Full anatomy in

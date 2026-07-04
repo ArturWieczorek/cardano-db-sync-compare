@@ -42,7 +42,7 @@ SELECT max(block_no), max(epoch_no) FROM block;   -- preprod: 4804649, 293
 **Step 2 - the common boundary (once, total).** The tool takes the *lower* of the two
 tips and pulls it back by a margin: `cutoff_block = min(tip1, tip2) - --block-margin`
 (default 0) and `cutoff_epoch = min(epoch1, epoch2) - --epoch-margin` (default 2, to skip
-the in-progress epoch and the volatile rollback zone). For a preprod DB compared with
+the in-progress epoch and its not-yet-finalized rewards). For a preprod DB compared with
 itself that is `block_no <= 4804649`, `epoch_no <= 291`. This is plain arithmetic in
 Python, not a query.
 
