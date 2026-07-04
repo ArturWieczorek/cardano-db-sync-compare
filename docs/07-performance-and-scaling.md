@@ -36,7 +36,7 @@ add an index (see [extending](09-extending-and-limitations.md)).
 
 Translating foreign keys to natural keys ([how it works, idea 1](03-how-it-works.md))
 means joining each table to the ones it points at (`tx`, `datum`, `stake_address`,
-…). For a **full** run - where almost every row participates - PostgreSQL builds an
+...). For a **full** run - where almost every row participates - PostgreSQL builds an
 in-memory hash of the referenced table and streams through: a **hash join**, which
 is efficient at that scale. It only *looks* slow if you run it over a tiny window,
 because it still builds the whole hash up front. That asymmetry is expected and is
@@ -236,16 +236,56 @@ The id-range window ([how it works, idea 3](03-how-it-works.md)) assumes row
 `x`-`y`". That holds for **settled history**. In the last few thousand blocks -
 the rollback zone - a database may have re-inserted rows out of strict order, so a
 tight id-range there could include or exclude a few neighbouring rows. The tool
-guards against this by comparing only up to the **common boundary minus a margin**
-(`--epoch-margin`, default 2 epochs), keeping the comparison in settled territory.
-Don't set the cutoff right at the tip.
+guards against this with two margins that pull the cutoff back below the lower
+tip. They default differently on purpose - and the reason is the key to using them
+correctly.
 
-For block-anchored tables there is the matching `--block-margin` knob (default 0):
-set it to pull the block cutoff back below the lower tip by roughly the security
-parameter `k` (≈2160 on mainnet) when one database's tip sits in the volatile
-rollback zone. (In the validation run this wasn't the cause of any mismatch -
-the only block-anchored difference, in `tx_out`, was a real pointer-address
-encoding fix at block ~7M, not a near-tip artifact - but the knob is there when
-you do compare close to a tip.)
+### Why the two margins default differently (`--block-margin` 0, `--epoch-margin` 2)
+
+The two risks look similar but have a different *nature*: one is conditional, the
+other is structural and unavoidable.
+
+| | Newest-data risk near the tip | Correct default |
+|---|---|---|
+| **Block-anchored tables** (`tx`, `tx_out`, ...) | Present **only if** you stopped a database inside the live rollback zone *and* the two nodes had briefly diverged there | **0** + a knob to raise |
+| **Epoch-written tables** (`epoch_stake`, `reward`, ...) | Present in **every** comparison, no matter how the nodes were stopped | **2** |
+
+**`--block-margin` defaults to 0 - because the risk is conditional.** The cutoff is
+already `min(tip1, tip2)`, so the faster database's extra blocks are dropped. If both
+databases were stopped at a clean, agreed point (or restored from snapshots at the
+same chain point), the shared history below the tip is identical and *any* margin
+would just throw away thousands of perfectly comparable blocks. But **0 is a default,
+not a guarantee**: if you stop two nodes while they are actively following the tip,
+their last few blocks are genuinely in the rollback zone and can legitimately differ
+(each node captured a momentary, possibly-different view of the volatile tip). In
+that case you *should* raise `--block-margin` toward the security parameter `k`
+(≈2160 on mainnet) to pull the cutoff back into settled territory. Two things keep 0
+workable in practice: real rollbacks are almost always 1-2 blocks (2160 is the
+theoretical *maximum* depth, rarely approached), and a genuine near-tip artifact
+would be localized (Phase 2) to those last few blocks, so you would see it was a tip
+effect rather than real corruption. (In the validation run this wasn't the cause of
+any mismatch - the only block-anchored difference, in `tx_out`, was a real
+pointer-address encoding fix at block ~7M, not a near-tip artifact - but the knob is
+there when you compare close to a live tip.)
+
+**`--epoch-margin` defaults to 2 - because the risk is structural.** The newest
+epochs of the per-epoch tables are unreliable in *every* comparison, regardless of
+how carefully the nodes are stopped, for two stacked reasons:
+
+- **The in-progress epoch** hasn't ended, so its rows are only partially written.
+- **Reward/stake calculation lags by ~2 epochs**: the rewards *earned* in epoch `e`
+  are not computed and recorded until roughly two epochs later (the mark→set→go
+  stake-snapshot pipeline). So the last one-to-two epochs of `reward`/`epoch_stake`
+  can be absent in one database and mid-write in the other, purely as a function of
+  when each stopped - not a real difference.
+
+Holding back **2** epochs (not 1) steps past *both* the in-progress epoch and that
+reward-calc lag, landing the comparison on fully-computed snapshots. Because this
+unreliability can't be avoided at the node level, a nonzero default is always
+correct - which is why epoch margin is nonzero where block margin is not.
+
+Rule of thumb: leave the defaults for a settled/at-rest comparison; raise
+`--block-margin` to ≈`k` when either database's tip sits in the live rollback zone.
+Don't set the cutoff right at the tip.
 
 **Next:** [Case study: the pool-relay port bug →](08-case-study-pool-relay-port.md)

@@ -84,6 +84,69 @@ of chain facts**, which is the whole point.
 > so the comparison stays a safe margin below the tip. See
 > [extending and limitations](09-extending-and-limitations.md).
 
+### One boundary, a few ranges, reused by every table
+
+A natural question: is the boundary computed *once* and shared by every table, or
+computed *per table*? Neither, exactly - and the real answer is what makes this
+cheap.
+
+**Why not a single range for everything?** Because the *same block* is a
+*different ticket number* in every table. Block 3,000,000 might be `block.id`
+3,000,050, but `tx.id` 8,500,000 (the transactions in it) and `tx_out.id`
+21,000,000 (their outputs). A range like `BETWEEN 1 AND 8,500,000` is only
+meaningful for `tx`. So the tool needs one range *per backbone table* - but only a
+few of them. There are **three layers**:
+
+1. **Decide the boundary - once, total.** Read both tips (`SELECT max(block_no),
+   max(epoch_no) FROM block` on each database) and take the *lower* one, pulled
+   back by a small safety margin (`--block-margin`, and `--epoch-margin` default 2,
+   to stay out of the rollback zone and the in-progress epoch). That yields exactly
+   **one cutoff block number and one cutoff epoch number** for the whole run.
+
+2. **Translate it into a handful of spine ranges - once per database.** The single
+   cutoff block is expressed as a `(low_id, high_id)` range for each *spine* table
+   only, by walking `block → tx → {tx_out, pool_update, gov_action_proposal}` with
+   the index-seek trick above. That's **five ranges, not sixty** - and `--plan`
+   prints them literally:
+
+   ```
+   DB1 spine id-ranges: {'block': (0, 4804652), 'tx': (1, 5990121),
+                         'tx_out': (1, 20356046), 'pool_update': (1, 1273),
+                         'gov_action_proposal': (1, 100)}
+   ```
+
+   The two databases produce *different* numbers here (id drift), but each pair
+   selects the same slice of chain.
+
+3. **Each table reuses one of those ranges - nothing new computed.** Every one of
+   the ~60 tables is tied to a spine by the `ANCHORS` map (see
+   [how each table is compared](06-how-each-table-is-compared.md)), and simply
+   drops that spine's range into a `BETWEEN` on its own anchor column. So the check
+   is computed **per spine (5 of them), then shared across all tables** - not
+   re-derived per table, and not one single range forced onto everything. `--plan`
+   shows the reuse on each table's `anchor:` line:
+
+   | Table | `anchor:` line | Bound it uses |
+   |---|---|---|
+   | `tx_out` | id-range via spine `tx` | `WHERE tx_id BETWEEN 1 AND 5990121` |
+   | `pool_relay` | id-range via spine `pool_update` | `WHERE update_id BETWEEN 1 AND 1273` |
+   | `ma_tx_out` | id-range via spine `tx_out` | `WHERE tx_out_id BETWEEN 1 AND 20356046` |
+   | `epoch_stake` | epoch on `epoch_no` | `WHERE epoch_no <= 291` |
+   | `multi_asset` | none (accumulator) | `WHERE TRUE` (full table) |
+
+   Two tables sit outside the id-range mechanism: **epoch-written** tables
+   (`epoch_stake`, `reward`, `drep_distr`, ...) bound directly by the cutoff *epoch*
+   number, since the epoch is itself a drift-free chain coordinate; and
+   **accumulator** tables (`multi_asset`, `stake_address`, `pool_hash`, ...), which
+   have no clean chain position and are compared full-table (a count delta there
+   usually just reflects the tip gap, so it is reported as a note, not a failure).
+
+In one sentence: **the boundary is decided once (lower tip minus a margin),
+translated into five shared spine id-ranges per database, and each table simply
+reuses whichever range its anchor points to** - so the window is computed per
+spine, not per table. The exact SQL that produces those ranges is in
+[the generated SQL, annotated](12-the-generated-sql-annotated.md#how-the-id-range-bounds-are-computed).
+
 ---
 
 ## Idea 4 - Do cheap proofs before expensive ones (tiering)

@@ -167,7 +167,11 @@ surface.
 
 To bound a table to the common boundary ([how it works, idea 3](03-how-it-works.md)),
 the tool needs to know how each table connects to the chain. `ANCHORS` records
-that, in a few shapes:
+that. Crucially, the boundary's id-ranges are computed only for the **five spine
+tables** (`block`, `tx`, `tx_out`, `pool_update`, `gov_action_proposal`); every
+other table just *reuses* whichever spine range its anchor points at - so the
+window is computed per spine, not per table (see
+[idea 3, "one boundary, a few ranges"](03-how-it-works.md)). The anchor shapes:
 
 - **`block` itself** - bounded by its own `id`.
 - **via a transaction** - e.g. `tx_out` through `tx_id`, `tx_in` through
@@ -176,7 +180,7 @@ that, in a few shapes:
   `tx_out_id → tx_out → tx`.
 - **via a pool update or a governance proposal** - for the pool and governance
   child tables.
-- **by epoch** - `epoch_stake`, `reward`, `drep_distr`, `pool_stat`, … are bounded
+- **by epoch** - `epoch_stake`, `reward`, `drep_distr`, `pool_stat`, ... are bounded
   by `epoch_no` (they're written per epoch).
 - **accumulator** - tables with no clean chain anchor (next section).
 
