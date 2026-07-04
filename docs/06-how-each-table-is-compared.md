@@ -342,6 +342,16 @@ stake_address: only_db1=10 only_db2=0 → db2 ⊆ db1 - db1 is a clean superset 
 lacks, so the whole delta is extra tip rows. If **both** sides are non-zero,
 it's *not* a clean tip gap and deserves a closer look.
 
+**Why "subset" is exactly the signature of a pure tip gap.** Accumulators are
+**append-only** - they only ever *grow* as you sync further (a row is added the first
+time an object appears, never removed). So if the two databases follow the same chain
+and one is simply behind, then *everything the behind DB has seen, the ahead DB has
+also seen*, plus a few extras it hasn't reached yet - which is the literal definition
+of a subset. That's why "behind DB's key set is contained in the ahead DB's" proves
+the difference is only sync position. If instead each DB holds a key the other lacks
+(neither is a subset), no "one is just ahead" story explains it - the sets have truly
+diverged, so it's a real difference to investigate.
+
 **Manual - `psql` + `comm`** (the same thing, by hand; useful to understand it).
 Real example from the preview LSM-vs-standard run (DB1 = LSM, ~971 blocks ahead;
 DB2 = standard):

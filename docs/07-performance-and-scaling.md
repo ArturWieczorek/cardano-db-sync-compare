@@ -125,6 +125,14 @@ When a table's content differs, Phase 2 tells you *where* on the chain. There ar
 two algorithms; the default is unchanged, the second is an opt-in speed-up for
 giant tables.
 
+**Two flags that are easy to confuse - they are not rivals.** `--localize`
+*picks the method* (`bisect` or `buckets`). `--localize-buckets N` is *a dial for
+the buckets method only* - how many windows to chop the chain into (default 1024,
+capped 5000); it does nothing under `bisect`. So `--localize bisect` runs the
+guessing-game halving; `--localize buckets` runs the one-pass method with 1024
+windows; `--localize buckets --localize-buckets 4000` runs the same one-pass
+method but with a finer, 4000-window ruler.
+
 ### Why this matters (a real cost)
 
 In the mainnet run, the only differing giant was `tx_out` (346M rows, the pointer
@@ -145,6 +153,25 @@ narrow. It's tiny code and reuses the normal hashing - but **each level re-runs 
 hash query over the data.** A row at block 7M gets scanned again at *every* level
 it falls inside, so a 346M-row table effectively gets scanned many times. Fine for
 small/medium tables; slow on a giant.
+
+**Exactly when does it stop?** For each window it looks at, one of three things
+happens: (1) the two DBs hash **equal** there -> that stretch matches, discard it;
+(2) they **differ** and the window is already **narrow enough** -> print it as a
+result and stop digging this branch; (3) they differ and the window is still wide
+-> split in half and examine both halves. "Narrow enough" means the window is
+`min_width` blocks wide or less - **2000 blocks** for id-range tables, and **0**
+for epoch tables (so it narrows all the way to a single epoch).
+
+**Careful with the "8":** the code's `max_leaves = 8` is **not** the search depth -
+it's the maximum number of *differing result windows* ("leaves") it will report. The
+halving goes as deep as needed: to shrink preprod's ~4.8M-block chain down to a
+2000-block window takes about **12 halvings**, not 8. For a single difference you get
+**one** leaf (one ~2000-block window, i.e. pinpointing to ~0.04% of the chain) after
+~12 levels down one branch. The `8` cap only bites when corruption is **scattered
+across many places** - then it reports the first 8 differing windows as a
+representative sample rather than listing every one. And note the axis is **block
+numbers, not rows**: a 2000-block window can hold many rows, and the number of
+halvings depends on how many *blocks* the chain has, not how many rows the table has.
 
 ### `buckets` (opt-in) - one pass
 
@@ -172,6 +199,59 @@ boundaries differ between the databases (id drift), but **bucket *k* = the same
 block range on both**, so comparing bucket *k* to bucket *k* compares the same
 slice of chain. (Same trick, and same correctness property, as the id-range
 windowing in [doc 03](03-how-it-works.md).)
+
+### Why buckets only works on id-range tables (no jargon)
+
+Picture the chain as a very long **shelf** marked off with block numbers 0, 1, 2,
+... up to millions. Every row of a table "sits" somewhere on that shelf, at the
+block it belongs to. Buckets wants to slice the shelf into ~1000 equal **sections**,
+fingerprint each section in one sweep, and compare section-by-section - the sections
+that differ are the answer.
+
+The catch: to drop each row into the right section, the tool must know **where on
+the shelf that row sits.** But rows aren't stored with a block number - they carry a
+**ticket number** (the row's `id`, handed out in order). So the tool has to translate
+each section boundary, which is a *block number*, into a *ticket number*, because
+ticket numbers are what the rows actually carry. (Those translated boundary values -
+"the ticket number where each section begins" - are the only thing the word
+*threshold* meant above; a *window* or *section* is just a range of blocks.)
+
+Whether the tool can do that translation is exactly what splits the table kinds:
+
+- **id-range tables** (`tx_out`, `pool_relay`, ...) carry a ticket number that climbs
+  in chain order, and the tool can work out "which ticket number matches block X" by
+  walking the backbone `block -> tx -> tx_out`. So it can mark the section boundaries
+  and bucket them. **Buckets works.**
+- **epoch tables** (`epoch_stake`, ...) are labelled by **epoch number**, not a
+  ticket number - and there are only a few hundred epochs ever, so slicing them into
+  1000 sections is pointless (plain `bisect` lands on the exact epoch in a handful of
+  steps). The tool **falls back to `bisect`** for them.
+- **accumulator tables** (`multi_asset`, ...) have **no position on the shelf at
+  all** (no block, no epoch - see [doc 06](06-how-each-table-is-compared.md)). You
+  can't sort them into sections, so **neither** buckets nor bisect applies; they're
+  compared whole and never localized.
+
+So `--localize buckets` really means "use buckets where a table carries a
+chain-ordered ticket number, and `bisect` everywhere else" - which is why the tool
+only bucketises id-range-anchored tables.
+
+### When would I use `buckets` over `bisect`?
+
+Short version: reach for `buckets` when the table that mismatched is **huge and
+`bisect` is too slow**; stick with `bisect` (the default) for everything else.
+
+| Situation | Use |
+|---|---|
+| Mismatch in a **giant** table (`tx_out`, `ma_tx_out`, `epoch_stake`), or localization is dragging / timing out | `--localize buckets` (raise `--localize-buckets` for a tighter window) |
+| **Small/medium** table, or you want the **tightest** possible window | `bisect` (default - do nothing) |
+| **Not sure** | Start with the default `bisect`; if it crawls on a big table, rerun with `buckets` |
+
+Why the split: `bisect` re-scans the table on every halving (~12 rounds), which is
+nothing on a small table but 12x the work on a billion-row one - exactly where the
+one-pass `buckets` wins (measured ~11x faster above). The cost of `buckets` is
+coarser resolution (a fixed window width) unless you raise `--localize-buckets`.
+Most runs are fine on the default; you only reach for `buckets` once a *giant* table
+actually mismatches and you don't want to wait for repeated full scans.
 
 ### Trade-offs and safety
 

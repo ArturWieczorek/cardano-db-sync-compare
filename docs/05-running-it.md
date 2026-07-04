@@ -49,6 +49,26 @@ db-sync-compare --db1 "dbname=v1 host=/var/run/postgresql" \
                          --db2 "dbname=v2 host=/var/run/postgresql" --plan
 ```
 
+**Which tables show up?** By default, *every* table the two databases share (~60).
+If you pass `--tables a,b,c` it lists only those - so a plan showing, say,
+`tx_out, pool_relay, ma_tx_out, epoch_stake, multi_asset` isn't the tool picking
+"special" tables; it's just the set you asked for. (Those five happen to make a good
+sampler because each uses a *different* anchor - id-range via `tx`, via
+`pool_update`, via `tx_out`, an epoch bound, and an accumulator respectively - so one
+screen shows every way a table gets bounded. See [doc 03, idea 3](03-how-it-works.md)
+and [doc 06](06-how-each-table-is-compared.md).)
+
+**The `[...]` tag next to each name** is the table's *effort tier* - a separate thing
+from its anchor (the anchor says *how it's bounded*; the tag says *how much work the
+fingerprint does*):
+
+| Tag | Meaning |
+|---|---|
+| `[normal]` | small/medium table - full every-column fingerprint |
+| `[giant]` | an enormous table (`tx_out`, `ma_tx_out`, `epoch_stake`, ...) - gets the cheaper *tiered* check by default (count + numeric sum/min/max + a fingerprint over the cheap columns); `--full` forces the exhaustive fingerprint. See [tiering, idea 4](03-how-it-works.md) and [`GIANT_TABLES`](06-how-each-table-is-compared.md) |
+| `[accumulator]` | no chain coordinate - compared whole (`WHERE TRUE`); see [doc 06](06-how-each-table-is-compared.md) |
+| `[excluded]` | a non-chain table the tool deliberately doesn't compare |
+
 ### `--block-range LO:HI` - fast spot-check
 
 Compare only a window of the chain (by block height). Great for a quick
