@@ -159,8 +159,10 @@ So by default these **giant tables** get a *tiered* check: the row count, plus a
 sum/min/max of their main numeric column (e.g. the quantity), plus a fingerprint
 over the cheap-to-translate columns - enough to catch real corruption quickly. If
 you want the exhaustive, every-column-translated fingerprint on the giants too,
-pass `--full`. Small and medium tables always get the full treatment. Details in
-[performance and scaling](07-performance-and-scaling.md).
+pass `--full`. Small and medium tables always get the full treatment. Step-by-step
+with a worked `ma_tx_out` example in
+[how each table is compared](06-how-each-table-is-compared.md#worked-example-ma_tx_out-step-by-step);
+more on cost in [performance and scaling](07-performance-and-scaling.md).
 
 ---
 

@@ -101,11 +101,131 @@ correct, honest way to answer "is the chain data the same?"
 ## 2. `GIANT_TABLES` - the ones that get tiered effort
 
 The billion- and hundred-million-row tables (`ma_tx_out`, `epoch_stake`,
-`reward`, `tx_out`, `tx_in`, `tx`, …). By default these get the cheaper tiered
+`reward`, `tx_out`, `tx_in`, `tx`, ...). By default these get the cheaper tiered
 check (count + numeric sum/min/max + a shallow fingerprint); `--full` upgrades
 them to the exhaustive every-column fingerprint. See
 [how it works, idea 4](03-how-it-works.md) and
 [performance](07-performance-and-scaling.md).
+
+### Why giants are special
+
+The normal fingerprint **translates every foreign key** (by joining to the row it
+points at) and hashes **every column of every row**. On a billion-row table
+(`ma_tx_out` is ~1.1B on mainnet; `epoch_stake`/`reward` ~450M each) that is the
+single most expensive thing the tool can do. So by default giants get a *tiered*
+check, and `--full` turns the tiering off and treats them like any other table.
+
+Mechanically, "giant" means exactly one thing (`planning.py`): the FK translation
+is allowed to go only **1 join deep** instead of effectively unlimited. Everything
+else follows from that one cap.
+
+```python
+is_giant = name in GIANT_TABLES and not full      # --full cancels giant treatment
+max_depth = giant_fk_depth if is_giant else 8      # giant_fk_depth default = 1
+```
+
+### Worked example: `ma_tx_out`, step by step
+
+`ma_tx_out` records "this output holds this much of this token." Its columns:
+`id` (surrogate), `ident` (FK -> `multi_asset`), `quantity` (a number), `tx_out_id`
+(FK -> `tx_out`). Here is what the tiered check does to it.
+
+**Step 1 - drop columns that must never be hashed.** The surrogate `id` (it drifts
+between databases) and any `GENERATED` columns are dropped up front. Left:
+`ident`, `quantity`, `tx_out_id`.
+
+**Step 2 - translate foreign keys, but only 1 hop deep.** For each FK the tool
+follows it to the target's *natural key* rather than hash the drifting id, capped at
+`max_depth = 1`:
+
+- `ident -> multi_asset`: `multi_asset`'s natural key is `(policy, name)` - plain
+  columns, **1 hop**, within budget. Becomes `j1."policy", j1."name"`.
+- `tx_out_id -> tx_out`: `tx_out`'s natural key needs *its* transaction's hash
+  (`tx_out -> tx -> tx.hash`), a **2nd** hop. Over the depth-1 budget, so the tool
+  **drops the column rather than hash a drifting id**, and says so loudly. That is
+  the `--plan` line:
+
+  ```
+  ma_tx_out  [giant]
+    columns dropped (FK over depth budget): ['tx_out.tx_id->tx (depth>1)', 'tx_out_id->tx_out']
+  ```
+
+  Tiering never silently omits anything - it reports exactly what it skipped.
+
+**Step 3 - bound to the common slice** (identical to any table): `ma_tx_out` is
+anchored by `tx_out_id` via the `tx_out` spine, so the bound is
+`WHERE t0."tx_out_id" BETWEEN <lo> AND <hi>` (see [idea 3](03-how-it-works.md)).
+
+**Step 4 - the set-hash query** over the *surviving* columns (note `tx_out_id` is
+absent):
+
+```sql
+SELECT count(*) AS n,
+       coalesce(sum(('x'||substr(h,1,15))::bit(60)::bigint::numeric),0) AS s1,
+       coalesce(sum(('x'||substr(h,17,15))::bit(60)::bigint::numeric),0) AS s2
+FROM (
+  SELECT md5(ROW(j1."policy", j1."name", t0."quantity")::text) AS h
+  FROM "ma_tx_out" t0
+  LEFT JOIN "multi_asset" j1 ON t0."ident" = j1."id"
+  WHERE t0."tx_out_id" BETWEEN 1 AND 20356046
+) q
+```
+
+Only three numbers (`n, s1, s2`) come back over the wire - that is what makes a
+billion rows feasible. (Full anatomy in
+[the generated SQL, annotated](12-the-generated-sql-annotated.md).)
+
+**Step 5 - the cheap numeric value proof.** A giant with a numeric value column
+(`VALUE_COLUMNS = value, quantity, amount, fee, out_sum, deposit`) also gets a
+`sum`/`min`/`max` over it - a bulk sanity check on the totals that catches corrupted
+amounts fast. For `ma_tx_out` that column is `quantity`:
+
+```sql
+SELECT coalesce(sum(t0."quantity"::numeric),0),
+       coalesce(min(t0."quantity"::numeric),0),
+       coalesce(max(t0."quantity"::numeric),0)
+FROM "ma_tx_out" t0 ... WHERE t0."tx_out_id" BETWEEN 1 AND 20356046
+```
+
+(Non-numeric "value" columns like `datum.value`, which is `jsonb`, are never summed -
+the "value-column guard.")
+
+**Step 6 - compare and classify.** Both queries run on both DBs; only the small
+results travel back. The verdict is decided in this priority order (`compare.py`):
+`COUNT_DIFF` (row counts differ, or one side is empty) -> `HASH_DIFF` (counts match,
+summed MD5s differ) -> `VALUE_DIFF` (counts and hashes match, sum/min/max differ - a
+last-resort tie-breaker) -> `MATCH`.
+
+### The dials: `--full` and `--giant-fk-depth`
+
+- **`--full`** raises the depth budget from 1 back to 8, so no columns are dropped:
+  `ma_tx_out`'s `tx_out_id` now resolves all the way to `tx.hash` + `index`, and the
+  fingerprint becomes `md5(ROW(policy, name, quantity, <tx.hash>, <index>))`. Complete,
+  but the expensive billion-row deep joins are back.
+- **`--giant-fk-depth N`** (default 1) is the middle ground: raise the giant depth
+  budget without going all the way to `--full`.
+
+| | Default (tiered) | `--full` |
+|---|---|---|
+| FK depth budget | 1 | 8 |
+| `ident -> multi_asset` | `(policy, name)` | `(policy, name)` |
+| `tx_out_id -> tx_out -> tx` | dropped (depth>1), reported | `tx.hash`, `index` |
+| Row fingerprint | `md5(ROW(policy, name, quantity))` | `md5(ROW(policy, name, quantity, tx.hash, index))` |
+| Value proof on `quantity` | sum/min/max | sum/min/max |
+| Cost on a billion rows | cheap | expensive |
+
+### Localizing a giant mismatch
+
+If a giant's fingerprints differ, Phase 2 narrows down *where*. Because bisection
+would re-scan the billion-row table ~12 times, this is exactly where
+**`--localize buckets`** (one pass) pays off - see
+[performance](07-performance-and-scaling.md#localizing-a-mismatch---localize-bisect-vs---localize-buckets).
+
+**In one sentence:** a giant is compared by dropping its id, translating only its
+1-hop foreign keys (and loudly reporting the deeper ones it drops), bounding it to
+the common slice, then taking a count + summed-MD5 fingerprint over the surviving
+columns plus a sum/min/max of its numeric value column - a fast "good-enough" proof
+by default, upgradable to the exhaustive every-column hash with `--full`.
 
 ## 3. `NATURAL_KEYS` - the shared identifier of each table
 
