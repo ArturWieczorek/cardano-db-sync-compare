@@ -249,6 +249,13 @@ ANCHORS: dict[str, tuple] = {
     "constitution": ("gap_fk", "gov_action_proposal_id"),
     "committee": ("gap_fk", "gov_action_proposal_id"),
     "epoch": ("epoch", "no"),
+    # db-sync 13.7.2.1 (migration-2-0049) replaced the `epoch` TABLE with a VIEW
+    # (epoch_finalized UNION ALL epoch_current) plus this base table of finalised
+    # epochs. Introspection drops the views (schema.py), so on the new schema the
+    # finalised aggregates are compared here instead - bounded by epoch, same as
+    # the old `epoch` table (its epoch-number column is also `no`). Inert on older
+    # schemas that lack the table (superset pattern, like `address` below).
+    "epoch_finalized": ("epoch", "no"),
     "epoch_stake": ("epoch", "epoch_no"),
     "epoch_stake_progress": ("epoch", "epoch_no"),
     "epoch_state": ("epoch", "epoch_no"),

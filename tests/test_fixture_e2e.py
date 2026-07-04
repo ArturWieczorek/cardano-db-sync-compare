@@ -476,3 +476,127 @@ def test_address_table_accumulator_subset_check(two_dbs_addr, _db_dsns_addr):
     assert v["only_db1"] == 0
     assert v["only_db2"] == 1
     assert "db1 ⊆ db2" in v["verdict"]
+
+
+# --------------------------------------------------------------------------- #
+# db-sync 13.7.2.1 epoch schema fixtures + tests
+#
+# Migration migration-2-0049 turned `epoch` from a base table into a VIEW
+# (epoch_finalized UNION ALL epoch_current) and added the `epoch_finalized` base
+# table plus the `epoch_current` view. These tests prove end-to-end that the tool
+# (a) drops the views from introspection and keeps the base table, (b) compares
+# `epoch_finalized` epoch-bounded (not as an accumulator), so an extra finalised
+# epoch beyond the common cutoff is excluded rather than raising a spurious
+# COUNT_DIFF, and (c) still detects a corrupted aggregate.
+# --------------------------------------------------------------------------- #
+
+_DDL_EPOCHF = [
+    "CREATE TABLE block (id bigint PRIMARY KEY, hash bytea, block_no int, epoch_no int, slot_no bigint)",
+    "CREATE TABLE tx (id bigint PRIMARY KEY, hash bytea, block_id bigint)",
+    'CREATE TABLE tx_out (id bigint PRIMARY KEY, tx_id bigint, "index" int, value numeric, address text)',
+    "CREATE TABLE pool_update (id bigint PRIMARY KEY, hash_id bigint, registered_tx_id bigint, cert_index int)",
+    "CREATE TABLE gov_action_proposal (id bigint PRIMARY KEY, tx_id bigint, index int)",
+    "CREATE TABLE meta (id bigint PRIMARY KEY, version text)",
+    # epoch_finalized is a base table (compared); epoch and epoch_current are
+    # VIEWS the tool must drop from introspection.
+    "CREATE TABLE epoch_finalized (id bigint PRIMARY KEY, out_sum numeric, fees numeric, "
+    "tx_count int, blk_count int, no int UNIQUE, start_time timestamp, end_time timestamp)",
+    "CREATE VIEW epoch_current AS SELECT id, out_sum, fees, tx_count, blk_count, no, "
+    "start_time, end_time FROM epoch_finalized WHERE false",
+    "CREATE VIEW epoch AS SELECT * FROM epoch_finalized UNION ALL SELECT * FROM epoch_current",
+]
+
+# Views cannot be truncated - list base tables only.
+_ALL_TABLES_EPOCHF = "block, tx, tx_out, pool_update, gov_action_proposal, meta, epoch_finalized"
+
+
+def _seed_data_epochf(conn, off: int, extra_tip: bool, version: str) -> None:
+    """Seed blocks spanning several epochs (epoch_no = block_no // 2) and one
+    `epoch_finalized` row per finalised epoch. ``off`` drifts every id (the two
+    syncs disagree on surrogate ids); ``extra_tip`` gives the ahead DB one more
+    block - and thus one more finalised epoch - beyond the common cutoff."""
+    max_bn = 7 if extra_tip else 6  # DB1 block_no 0..5 (epochs 0,0,1,1,2,2 -> max 2);
+    #                                 DB2 adds block_no 6 -> epoch 3
+    for bn in range(0, max_bn):
+        conn.execute(
+            "INSERT INTO block VALUES (%s, decode(md5(%s),'hex'), %s, %s, %s)",
+            (bn + 1 + off, f"block-{bn}", bn, bn // 2, bn),
+        )
+    max_epoch = 3 if extra_tip else 2
+    for e in range(0, max_epoch + 1):
+        # Aggregates are a deterministic function of the epoch number, identical in
+        # both DBs (only the surrogate id, which is not hashed, differs).
+        conn.execute(
+            "INSERT INTO epoch_finalized VALUES (%s, %s, %s, %s, %s, %s, "
+            "TIMESTAMP '2020-01-01' + (%s * INTERVAL '5 days'), "
+            "TIMESTAMP '2020-01-01' + ((%s + 1) * INTERVAL '5 days'))",
+            (e + 1 + off, 1000 * (e + 1), 10 * (e + 1), e + 1, e + 1, e, e, e),
+        )
+    conn.execute("INSERT INTO meta VALUES (%s, %s)", (1 + off, version))
+
+
+@pytest.fixture(scope="session")
+def _db_dsns_epochf(pg_params):
+    """Two empty 13.7.2.1-epoch-schema databases with the schema, created once."""
+    n1, n2 = "dbsync_cmp_epochf_v1", "dbsync_cmp_epochf_v2"
+    admin = psycopg.connect(_conninfo(pg_params, "postgres"), autocommit=True)
+    for n in (n1, n2):
+        admin.execute(f'DROP DATABASE IF EXISTS "{n}" WITH (FORCE)')
+        admin.execute(f'CREATE DATABASE "{n}"')
+    dsn1, dsn2 = _conninfo(pg_params, n1), _conninfo(pg_params, n2)
+    for dsn in (dsn1, dsn2):
+        with psycopg.connect(dsn, autocommit=True) as c:
+            for ddl in _DDL_EPOCHF:
+                c.execute(ddl)
+    try:
+        yield dsn1, dsn2
+    finally:
+        for n in (n1, n2):
+            admin.execute(f'DROP DATABASE IF EXISTS "{n}" WITH (FORCE)')
+        admin.close()
+
+
+@pytest.fixture
+def two_dbs_epochf(_db_dsns_epochf):
+    """Reset to a clean, matching baseline (DB2 drifted + one finalised epoch
+    ahead) and yield two open connections."""
+    dsn1, dsn2 = _db_dsns_epochf
+    c1 = psycopg.connect(dsn1, autocommit=True)
+    c2 = psycopg.connect(dsn2, autocommit=True)
+    for c in (c1, c2):
+        c.execute(f"TRUNCATE {_ALL_TABLES_EPOCHF}")
+    _seed_data_epochf(c1, off=0, extra_tip=False, version="v1")
+    _seed_data_epochf(c2, off=100, extra_tip=True, version="v2")
+    try:
+        yield c1, c2
+    finally:
+        c1.close()
+        c2.close()
+
+
+def test_epochf_introspect_drops_views_keeps_base_table(two_dbs_epochf):
+    from db_sync_comparator.schema import introspect
+
+    c1, _ = two_dbs_epochf
+    s = introspect(c1)
+    assert "epoch_finalized" in s  # base table is compared
+    assert "epoch" not in s  # view is dropped
+    assert "epoch_current" not in s  # view is dropped
+
+
+def test_epochf_matches_and_excludes_extra_finalized_epoch(two_dbs_epochf):
+    # epoch_finalized must be epoch-anchored (bounded), not an accumulator: DB1 has
+    # finalised epochs 0..2, DB2 has 0..3, but epoch 3 is beyond the common cutoff
+    # (2), so both compare exactly the 3 shared epochs and MATCH despite id drift.
+    plan, result, _ = _compare_one(*two_dbs_epochf, "epoch_finalized")
+    assert plan.anchor_kind == "epoch"  # NOT accumulator
+    assert result.status == "MATCH", result.note
+    assert result.n1 == result.n2 == 3
+
+
+def test_epochf_corrupted_out_sum_is_detected(two_dbs_epochf):
+    c1, c2 = two_dbs_epochf
+    c2.execute("UPDATE epoch_finalized SET out_sum = out_sum + 1 WHERE no = 1")
+    _, result, _ = _compare_one(c1, c2, "epoch_finalized")
+    assert result.status == "HASH_DIFF"  # out_sum is in the row hash
+    assert result.n1 == result.n2  # only content changed, no row-count change

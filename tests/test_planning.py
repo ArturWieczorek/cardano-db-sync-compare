@@ -111,6 +111,35 @@ def test_accumulator_classification(make_schema):
     assert p.anchor_kind == "none"
 
 
+def test_epoch_finalized_epoch_anchored_with_value_proof(make_schema):
+    """db-sync 13.7.2.1: `epoch_finalized` is a base table with an epoch-number
+    column `no` and an `out_sum` value column. It must be epoch-anchored (like the
+    old `epoch` table) rather than fall through to the accumulator default, and get
+    a value proof on `out_sum` (domain word128type reports base type numeric)."""
+    schemas = {
+        "epoch_finalized": make_schema(
+            "epoch_finalized",
+            ["id", "out_sum", "fees", "tx_count", "blk_count", "no", "start_time", "end_time"],
+            coltypes={"out_sum": "numeric", "fees": "numeric", "no": "integer"},
+        )
+    }
+    common = _common(schemas)
+    p = plan_table(
+        "epoch_finalized",
+        schemas["epoch_finalized"],
+        schemas["epoch_finalized"],
+        common,
+        full=False,
+        giant_fk_depth=1,
+    )
+    assert p.anchor_kind == "epoch"  # NOT accumulator
+    assert p.epoch_expr == 't0."no"'
+    assert p.value_col == "out_sum"
+    # surrogate id never hashed; the epoch number `no` is hashed as plain data
+    assert not any(e == 't0."id"' for e in p.select_exprs)
+    assert any(e == 't0."no"' for e in p.select_exprs)
+
+
 def test_address_variant_output_translates_address_id(make_schema):
     """Address (use_address_table) variant: collateral_tx_out has address_id (a
     FK to the address table) instead of an inline address column. It must be

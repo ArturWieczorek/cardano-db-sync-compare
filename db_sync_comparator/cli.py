@@ -180,6 +180,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"tables only in DB1 (not compared): {', '.join(only_db1)}")
     if only_db2:
         print(f"tables only in DB2 (not compared): {', '.join(only_db2)}")
+    # db-sync 13.7.2.1 (migration-2-0049) turned `epoch` into a view and added the
+    # `epoch_finalized` base table. Introspection drops views, so across that
+    # upgrade the epoch aggregates sit on different objects (old `epoch` table vs
+    # new `epoch_finalized`) and end up on opposite "only in DBx" lists. Surface
+    # it so a cross-version run does not read as clean coverage of the epoch data.
+    if ("epoch_finalized" in schema1) != ("epoch_finalized" in schema2):
+        newer = "DB1" if "epoch_finalized" in schema1 else "DB2"
+        older = "DB2" if newer == "DB1" else "DB1"
+        print(
+            f"note: {newer} uses the db-sync 13.7.2.1 epoch schema (epoch is a view, "
+            f"epoch_finalized is a table) while {older} uses the pre-13.7.2.1 epoch "
+            f"table - epoch aggregates live on different objects and are NOT compared "
+            f"across this version gap (compare same-schema databases for epoch coverage)."
+        )
 
     in_block_range = block_range is not None
     ranges1 = compute_spine_ranges(c1, cutoff_block, block_range)

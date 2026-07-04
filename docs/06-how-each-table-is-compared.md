@@ -181,8 +181,19 @@ window is computed per spine, not per table (see
 - **via a pool update or a governance proposal** - for the pool and governance
   child tables.
 - **by epoch** - `epoch_stake`, `reward`, `drep_distr`, `pool_stat`, ... are bounded
-  by `epoch_no` (they're written per epoch).
+  by `epoch_no` (they're written per epoch). `epoch_finalized` (below) is bounded
+  the same way, by its `no` column.
 - **accumulator** - tables with no clean chain anchor (next section).
+
+> **db-sync 13.7.2.1 note.** Migration `migration-2-0049` turned `epoch` from a base
+> table into a *view* (`epoch_finalized UNION ALL epoch_current`) and added the
+> `epoch_finalized` base table plus the `epoch_current` view. The comparator reads
+> only base tables (it drops views), so on the new schema the finalised epoch
+> aggregates are compared through **`epoch_finalized`** - epoch-bounded, exactly as
+> the old `epoch` table was - while the volatile in-progress epoch (`epoch_current`,
+> and thus the `epoch` view) is correctly skipped. Because the two objects have
+> different names, a *cross-version* run (pre-13.7.2.1 vs 13.7.2.1+) cannot line them
+> up; the tool prints a note when it detects that split.
 
 ## Chain-anchored vs accumulator tables (the diary analogy)
 
