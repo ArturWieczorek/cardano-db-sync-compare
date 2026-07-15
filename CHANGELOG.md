@@ -9,17 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **db-sync 13.7.2.1 epoch schema support.** Migration `migration-2-0049` turned
-  `epoch` from a base table into a view (`epoch_finalized UNION ALL epoch_current`)
-  and added the `epoch_finalized` base table. The comparator now anchors
-  `epoch_finalized` by epoch (`ANCHORS["epoch_finalized"] = ("epoch", "no")`), so on
-  the new schema the finalised epoch aggregates are compared epoch-bounded - exactly
-  as the old `epoch` table was - instead of falling through to the accumulator
-  default (which produced a spurious `COUNT_DIFF` on any tip gap). The volatile
-  in-progress epoch (`epoch_current`, and the `epoch` view) is correctly skipped. A
-  cross-version run (pre-13.7.2.1 vs 13.7.2.1+) now prints a note that the epoch
-  aggregates live on differently-named objects and are not compared across the gap.
-  Inert on older schemas that lack the table (superset pattern).
+- **db-sync 13.7.2.1 epoch schema support (view split, schema stage-two v49,
+  `migration-2-0049`).** Upstream cardano-db-sync turned `epoch` from a base table
+  into a VIEW (`epoch_finalized UNION ALL epoch_current`), backed by a new
+  `epoch_finalized` base table, and added an `epoch_sync_enabled` operator toggle.
+  Introspection compares base tables only, so on the new schema the `epoch` view is
+  skipped - previously the per-epoch aggregate would have silently dropped out of
+  the comparison. The finalised-epoch aggregate is now compared via `epoch_finalized`,
+  anchored by epoch number `no` (`ANCHORS["epoch_finalized"] = ("epoch", "no")`) so
+  it is epoch-bounded and localizable instead of falling through to the accumulator
+  default (which produced a spurious `COUNT_DIFF` on any tip gap). `epoch_sync_enabled`
+  is excluded as operator config (`EXCLUDED_TABLES`); the volatile in-progress
+  `epoch_current` view stays skipped. The legacy `epoch`-table anchor is kept for
+  old-schema / cross-version runs, and a cross-version run (pre-13.7.2.1 vs
+  13.7.2.1+) now prints a note that the epoch aggregates live on differently-named
+  objects and are not compared across the gap. Inert on older schemas that lack the
+  table (superset pattern). Covered by registry unit tests and end-to-end fixtures
+  (an `epoch_finalized` table, an `epoch_sync_enabled` row, and `epoch`/`epoch_current`
+  views) that assert the view is dropped, the finalised table is epoch-anchored and
+  matches, and the toggle is excluded.
 
 ## [1.0.0] - 2026-06-19
 

@@ -18,6 +18,11 @@ db-sync version under comparison** (master drifts ahead of releases):
 * schema source:     https://github.com/IntersectMBO/cardano-db-sync/tree/master/cardano-db/src/Cardano/Db/Schema
 * migrations (DDL):  https://github.com/IntersectMBO/cardano-db-sync/tree/master/cardano-db/test/schema
 
+Schema-version caveat: as of stage-two v49 (migration-2-0049) ``epoch`` is a VIEW
+(``epoch_finalized UNION ALL epoch_current``), not a table - introspection drops
+views, so the finalized-epoch aggregate is compared via the ``epoch_finalized``
+base table instead. ``epoch_current`` (volatile, in-progress epoch) stays skipped.
+
 See ``docs/06-how-each-table-is-compared.md`` for the prose explanation.
 """
 
@@ -32,6 +37,7 @@ EXCLUDED_TABLES: dict[str, str] = {
     "extra_migrations": "per-instance migration log",
     "meta": "records this sync's version/start_time - differs by definition",
     "epoch_sync_time": "wall-clock sync duration per epoch - non-deterministic",
+    "epoch_sync_enabled": "per-instance toggle (whether epoch aggregation is enabled); operator config, not chain-derived",
     "reverse_index": "near-tip rollback helper; volatile, id-encoded payload",
     # Off-chain fetchers hit the network: which URLs resolved, when, and the
     # fetched bytes are not a function of the chain. Disabled by default in
@@ -248,13 +254,15 @@ ANCHORS: dict[str, tuple] = {
     "treasury_withdrawal": ("gap_fk", "gov_action_proposal_id"),
     "constitution": ("gap_fk", "gov_action_proposal_id"),
     "committee": ("gap_fk", "gov_action_proposal_id"),
+    # `epoch` was a base table until schema stage-two v49 (migration-2-0049); since
+    # then it is a VIEW (epoch_finalized UNION ALL epoch_current) and introspect()
+    # drops it. This entry is kept harmless for old-schema / old-vs-old runs where
+    # `epoch` is still a table; on the new schema the finalized-epoch aggregate is
+    # compared via `epoch_finalized` below (same columns, same `no` epoch anchor).
     "epoch": ("epoch", "no"),
-    # db-sync 13.7.2.1 (migration-2-0049) replaced the `epoch` TABLE with a VIEW
-    # (epoch_finalized UNION ALL epoch_current) plus this base table of finalised
-    # epochs. Introspection drops the views (schema.py), so on the new schema the
-    # finalised aggregates are compared here instead - bounded by epoch, same as
-    # the old `epoch` table (its epoch-number column is also `no`). Inert on older
-    # schemas that lack the table (superset pattern, like `address` below).
+    # On the new schema (v49) the finalised aggregates are compared here instead
+    # of via the `epoch` view above - bounded by epoch, same `no` column. Inert on
+    # older schemas that lack the table (superset pattern, like `address` below).
     "epoch_finalized": ("epoch", "no"),
     "epoch_stake": ("epoch", "epoch_no"),
     "epoch_stake_progress": ("epoch", "epoch_no"),

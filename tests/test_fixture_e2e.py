@@ -72,6 +72,13 @@ _DDL = [
     "CREATE TABLE pool_update (id bigint PRIMARY KEY, hash_id bigint, registered_tx_id bigint, cert_index int)",
     "CREATE TABLE pool_relay (id bigint PRIMARY KEY, update_id bigint, ipv4 text, port int)",
     "CREATE TABLE epoch_stake (id bigint PRIMARY KEY, addr_id bigint, pool_id bigint, amount numeric, epoch_no int)",
+    # Since schema stage-two v49, finalized-epoch aggregates live in the
+    # epoch_finalized base table; `epoch` is a VIEW over it (+ the live current
+    # epoch); epoch_sync_enabled is a single-row operator toggle.
+    "CREATE TABLE epoch_finalized (id bigint PRIMARY KEY, out_sum numeric, fees numeric, "
+    "tx_count int, blk_count int, no int, start_time timestamp, end_time timestamp)",
+    "CREATE TABLE epoch_sync_enabled (singleton boolean PRIMARY KEY, enabled boolean)",
+    "CREATE VIEW epoch AS SELECT id, out_sum, fees, tx_count, blk_count, no, start_time, end_time FROM epoch_finalized",
     "CREATE TABLE gov_action_proposal (id bigint PRIMARY KEY, tx_id bigint, index int)",
     "CREATE TABLE meta (id bigint PRIMARY KEY, version text)",
 ]
@@ -119,6 +126,13 @@ def _seed_data(conn, off: int, extra_tip: bool, version: str) -> None:
     conn.execute("INSERT INTO pool_update VALUES (%s, %s, %s, 0)", (1 + off, 1 + off, 2 + off))
     conn.execute("INSERT INTO pool_relay VALUES (%s, %s, '1.2.3.4', 52636)", (1 + off, 1 + off))
     conn.execute("INSERT INTO epoch_stake VALUES (%s, %s, %s, 999, 0)", (1 + off, 1 + off, 1 + off))
+    # Finalized-epoch aggregate for epoch 0 - identical logical content on both
+    # sides (drift only in the surrogate id). epoch_sync_enabled is identical too.
+    conn.execute(
+        "INSERT INTO epoch_finalized VALUES (%s, 12345, 678, 5, 6, 0, '2020-01-01 00:00:00', '2020-01-05 00:00:00')",
+        (1 + off,),
+    )
+    conn.execute("INSERT INTO epoch_sync_enabled VALUES (true, true)")
     conn.execute("INSERT INTO meta VALUES (%s, %s)", (1 + off, version))
 
 
@@ -144,7 +158,8 @@ def _conninfo(params: dict, dbname: str) -> str:
 
 _ALL_TABLES = (
     "block, tx, tx_out, multi_asset, ma_tx_out, stake_address, pool_hash, "
-    "pool_update, pool_relay, epoch_stake, gov_action_proposal, meta"
+    "pool_update, pool_relay, epoch_stake, epoch_finalized, epoch_sync_enabled, "
+    "gov_action_proposal, meta"
 )
 
 
@@ -221,11 +236,43 @@ def _compare_one(c1, c2, table: str, full: bool = False):
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.parametrize("table", ["block", "tx_out", "ma_tx_out", "epoch_stake", "pool_relay"])
+@pytest.mark.parametrize("table", ["block", "tx_out", "ma_tx_out", "epoch_stake", "epoch_finalized", "pool_relay"])
 def test_identical_content_matches_despite_id_drift(two_dbs, table):
     _, result, _ = _compare_one(*two_dbs, table)
     assert result.status == "MATCH", f"{table}: {result.note}"
     assert result.n1 == result.n2 > 0
+
+
+def test_epoch_finalized_is_epoch_anchored(two_dbs):
+    # The finalized-epoch aggregate must be bounded by epoch number, not treated
+    # as an unanchored accumulator.
+    plan, result, _ = _compare_one(*two_dbs, "epoch_finalized")
+    assert plan.anchor_kind == "epoch"
+    assert result.status == "MATCH", result.note
+
+
+def test_epoch_view_is_dropped_not_compared(two_dbs):
+    # `epoch` is a VIEW (over epoch_finalized); introspect() keeps only base
+    # tables, so it must not surface for comparison on either side.
+    from db_sync_comparator.schema import introspect
+
+    c1, c2 = two_dbs
+    assert "epoch" not in introspect(c1)
+    assert "epoch" not in introspect(c2)
+    # The backing base tables are still present.
+    assert "epoch_finalized" in introspect(c1)
+
+
+def test_epoch_sync_enabled_is_excluded(two_dbs):
+    # Operator config (whether epoch aggregation is on), not chain data.
+    from db_sync_comparator.planning import plan_table
+    from db_sync_comparator.schema import introspect
+
+    c1, c2 = two_dbs
+    s1, s2 = introspect(c1), introspect(c2)
+    common = {t: set(s1[t].columns) & set(s2[t].columns) for t in set(s1) & set(s2)}
+    plan = plan_table("epoch_sync_enabled", s1["epoch_sync_enabled"], s2["epoch_sync_enabled"], common, False, 1)
+    assert plan.kind == "excluded"
 
 
 def test_tip_difference_is_excluded(two_dbs):

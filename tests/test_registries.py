@@ -88,3 +88,17 @@ def test_address_is_accumulator():
     from db_sync_comparator.registries import ANCHORS
 
     assert ANCHORS["address"] == ("accumulator",)
+
+
+def test_epoch_view_split_v49():
+    # As of schema stage-two v49 `epoch` is a VIEW; the finalized-epoch aggregate
+    # is the `epoch_finalized` base table, anchored by epoch number `no` (same as
+    # the legacy `epoch` table), and `epoch_sync_enabled` is operator config.
+    from db_sync_comparator.registries import ANCHORS
+    from db_sync_comparator.sql import build_anchor
+
+    assert ANCHORS["epoch_finalized"] == ("epoch", "no")
+    kind, spine, col, expr = build_anchor(ANCHORS["epoch_finalized"])
+    assert (kind, spine, col) == ("epoch", None, None)
+    assert expr == 't0."no"'
+    assert "epoch_sync_enabled" in EXCLUDED_TABLES
