@@ -115,7 +115,7 @@ CREATE INDEX IF NOT EXISTS idx_pool_update_hash_id ON pool_update(hash_id);
 These are deliberately held back until db-sync is nearly synced (see
 [primer 07](07-how-db-sync-loads-fast.md)).
 
-> **A correction worth flagging:** older notes (including the parent repo's `CLAUDE.md`)
+> **A correction worth flagging:** older or outdated descriptions sometimes
 > describe "stage 3 = SQL views." That is out of date. In the current db-sync, stage 3
 > is db-sync's own indexes, stage 4 is the rest of the indexes, and there are **no SQL
 > views** in the shipped schema at all - downstream tools query the base tables

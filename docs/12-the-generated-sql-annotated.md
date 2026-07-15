@@ -24,6 +24,82 @@ db-sync-compare --db1 "dbname=... host=/var/run/postgresql" \
 Everything below is real `--plan` output from two mainnet databases (db-sync 13.6.0.5 vs
 13.7.1.0), reformatted only for line width.
 
+## How the id-range bounds are computed
+
+The per-table queries below all carry a bound like `WHERE t0."tx_id" BETWEEN 1 AND ...`.
+This section shows where those numbers come from - the SQL that runs *before* any table
+is fingerprinted, to turn the one common boundary into the handful of spine ranges every
+table reuses ([how it works, idea 3](03-how-it-works.md#one-boundary-a-few-ranges-reused-by-every-table)).
+It lives in `ranges.py`. The numbers here are real, from preprod (db-sync 13.7.1.0, tip
+block 4,804,649). You can run every query below by hand on your own database.
+
+**Step 1 - each database's tip** (`ranges.get_tip`). One query per database:
+
+```sql
+SELECT max(block_no), max(epoch_no) FROM block;   -- preprod: 4804649, 293
+```
+
+**Step 2 - the common boundary (once, total).** The tool takes the *lower* of the two
+tips and pulls it back by a margin: `cutoff_block = min(tip1, tip2) - --block-margin`
+(default 0) and `cutoff_epoch = min(epoch1, epoch2) - --epoch-margin` (default 2, to skip
+the in-progress epoch and its not-yet-finalized rewards). For a preprod DB compared with
+itself that is `block_no <= 4804649`, `epoch_no <= 291`. This is plain arithmetic in
+Python, not a query.
+
+**Step 3 - the `block` id-range.** The largest `block.id` at or below the cutoff block
+(`compute_spine_ranges`, cutoff mode):
+
+```sql
+SELECT id FROM block WHERE block_no <= 4804649 ORDER BY block_no DESC, id DESC LIMIT 1;
+-- preprod -> 4804652, so the block range is (0, 4804652)
+```
+
+Two subtleties. First, the range **starts at `0`, not at the first block id** - that
+deliberately keeps the genesis / EBB rows whose `block_no` is `NULL` and which sort below
+everything. Second, note it is `ORDER BY ... DESC LIMIT 1`, **not** `SELECT max(id) ...
+WHERE block_no <= ...`. With a filter on the non-primary-key `block_no`, the planner would
+turn `max(id)` into a scan of a huge slice of the table; the `ORDER BY ... LIMIT 1` form is
+an **index seek** that jumps straight to the row in milliseconds
+([primer 02](primers/02-indexes-and-table-scans.md) - the trick that turned 3 minutes into
+1.8 seconds). Every step here uses that form.
+
+**Step 4 - walk the spine to the other ranges** (`ranges._minmax`). Each remaining spine
+range is the smallest and largest id whose foreign key falls in the previous range - two
+index seeks, `ASC` and `DESC`. `tx` off the block range:
+
+```sql
+SELECT
+  (SELECT id FROM tx WHERE block_id BETWEEN 0 AND 4804652 ORDER BY block_id ASC,  id ASC  LIMIT 1),
+  (SELECT id FROM tx WHERE block_id BETWEEN 0 AND 4804652 ORDER BY block_id DESC, id DESC LIMIT 1);
+-- preprod -> (1, 5990121)
+```
+
+then `tx_out` off the `tx` range (and, the same way, `pool_update` off `registered_tx_id`
+and `gov_action_proposal` off `tx_id`):
+
+```sql
+SELECT
+  (SELECT id FROM tx_out WHERE tx_id BETWEEN 1 AND 5990121 ORDER BY tx_id ASC,  id ASC  LIMIT 1),
+  (SELECT id FROM tx_out WHERE tx_id BETWEEN 1 AND 5990121 ORDER BY tx_id DESC, id DESC LIMIT 1);
+-- preprod -> (1, 20356046)
+```
+
+That is the **whole** boundary computation: five seeks' worth of ranges, once per database.
+`--plan` prints the result as one line:
+
+```
+DB1 spine id-ranges: {'block': (0, 4804652), 'tx': (1, 5990121),
+                      'tx_out': (1, 20356046), 'pool_update': (1, 1273),
+                      'gov_action_proposal': (1, 100)}
+```
+
+The two databases get *different* numbers here (id drift), but each pair selects the same
+slice of chain. Every table in the examples below then drops the one range its anchor
+points at into a `BETWEEN` - `tx_out` uses the `tx` range, `pool_relay` the `pool_update`
+range, `ma_tx_out` the `tx_out` range, and so on. Epoch-written tables (`epoch_stake`, ...)
+skip this entirely and bound on `epoch_no <= 291`; accumulator tables (`multi_asset`, ...)
+carry `WHERE TRUE`.
+
 ## Example 1: a simple table with one translation - `pool_relay`
 
 ```sql

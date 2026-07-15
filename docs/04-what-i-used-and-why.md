@@ -56,7 +56,7 @@ threads. `psql` would mean fragile text parsing. The trade-off is one dependency
 > mainnet run the Python client used ~18 s of CPU across ~5 h of wall-clock. A
 > compiled rewrite would change nothing measurable; the database is the
 > bottleneck. Full analysis:
-> [docs/07 - "Would a faster language help?"](07-performance-and-scaling.md#would-a-faster-language-rust-go-c-help--no-the-client-isnt-the-bottleneck).
+> [docs/07 - "Would a faster language help?"](07-performance-and-scaling.md#would-a-faster-language-rust-go-c-help---no-the-client-isnt-the-bottleneck).
 
 ## Bounding by id-range windows - not by joining to `block`
 

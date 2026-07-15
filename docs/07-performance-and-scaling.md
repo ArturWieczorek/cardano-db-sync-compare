@@ -36,7 +36,7 @@ add an index (see [extending](09-extending-and-limitations.md)).
 
 Translating foreign keys to natural keys ([how it works, idea 1](03-how-it-works.md))
 means joining each table to the ones it points at (`tx`, `datum`, `stake_address`,
-…). For a **full** run - where almost every row participates - PostgreSQL builds an
+...). For a **full** run - where almost every row participates - PostgreSQL builds an
 in-memory hash of the referenced table and streams through: a **hash join**, which
 is efficient at that scale. It only *looks* slow if you run it over a tiny window,
 because it still builds the whole hash up front. That asymmetry is expected and is
@@ -125,6 +125,14 @@ When a table's content differs, Phase 2 tells you *where* on the chain. There ar
 two algorithms; the default is unchanged, the second is an opt-in speed-up for
 giant tables.
 
+**Two flags that are easy to confuse - they are not rivals.** `--localize`
+*picks the method* (`bisect` or `buckets`). `--localize-buckets N` is *a dial for
+the buckets method only* - how many windows to chop the chain into (default 1024,
+capped 5000); it does nothing under `bisect`. So `--localize bisect` runs the
+guessing-game halving; `--localize buckets` runs the one-pass method with 1024
+windows; `--localize buckets --localize-buckets 4000` runs the same one-pass
+method but with a finer, 4000-window ruler.
+
 ### Why this matters (a real cost)
 
 In the mainnet run, the only differing giant was `tx_out` (346M rows, the pointer
@@ -145,6 +153,25 @@ narrow. It's tiny code and reuses the normal hashing - but **each level re-runs 
 hash query over the data.** A row at block 7M gets scanned again at *every* level
 it falls inside, so a 346M-row table effectively gets scanned many times. Fine for
 small/medium tables; slow on a giant.
+
+**Exactly when does it stop?** For each window it looks at, one of three things
+happens: (1) the two DBs hash **equal** there -> that stretch matches, discard it;
+(2) they **differ** and the window is already **narrow enough** -> print it as a
+result and stop digging this branch; (3) they differ and the window is still wide
+-> split in half and examine both halves. "Narrow enough" means the window is
+`min_width` blocks wide or less - **2000 blocks** for id-range tables, and **0**
+for epoch tables (so it narrows all the way to a single epoch).
+
+**Careful with the "8":** the code's `max_leaves = 8` is **not** the search depth -
+it's the maximum number of *differing result windows* ("leaves") it will report. The
+halving goes as deep as needed: to shrink preprod's ~4.8M-block chain down to a
+2000-block window takes about **12 halvings**, not 8. For a single difference you get
+**one** leaf (one ~2000-block window, i.e. pinpointing to ~0.04% of the chain) after
+~12 levels down one branch. The `8` cap only bites when corruption is **scattered
+across many places** - then it reports the first 8 differing windows as a
+representative sample rather than listing every one. And note the axis is **block
+numbers, not rows**: a 2000-block window can hold many rows, and the number of
+halvings depends on how many *blocks* the chain has, not how many rows the table has.
 
 ### `buckets` (opt-in) - one pass
 
@@ -172,6 +199,59 @@ boundaries differ between the databases (id drift), but **bucket *k* = the same
 block range on both**, so comparing bucket *k* to bucket *k* compares the same
 slice of chain. (Same trick, and same correctness property, as the id-range
 windowing in [doc 03](03-how-it-works.md).)
+
+### Why buckets only works on id-range tables (no jargon)
+
+Picture the chain as a very long **shelf** marked off with block numbers 0, 1, 2,
+... up to millions. Every row of a table "sits" somewhere on that shelf, at the
+block it belongs to. Buckets wants to slice the shelf into ~1000 equal **sections**,
+fingerprint each section in one sweep, and compare section-by-section - the sections
+that differ are the answer.
+
+The catch: to drop each row into the right section, the tool must know **where on
+the shelf that row sits.** But rows aren't stored with a block number - they carry a
+**ticket number** (the row's `id`, handed out in order). So the tool has to translate
+each section boundary, which is a *block number*, into a *ticket number*, because
+ticket numbers are what the rows actually carry. (Those translated boundary values -
+"the ticket number where each section begins" - are the only thing the word
+*threshold* meant above; a *window* or *section* is just a range of blocks.)
+
+Whether the tool can do that translation is exactly what splits the table kinds:
+
+- **id-range tables** (`tx_out`, `pool_relay`, ...) carry a ticket number that climbs
+  in chain order, and the tool can work out "which ticket number matches block X" by
+  walking the backbone `block -> tx -> tx_out`. So it can mark the section boundaries
+  and bucket them. **Buckets works.**
+- **epoch tables** (`epoch_stake`, ...) are labelled by **epoch number**, not a
+  ticket number - and there are only a few hundred epochs ever, so slicing them into
+  1000 sections is pointless (plain `bisect` lands on the exact epoch in a handful of
+  steps). The tool **falls back to `bisect`** for them.
+- **accumulator tables** (`multi_asset`, ...) have **no position on the shelf at
+  all** (no block, no epoch - see [doc 06](06-how-each-table-is-compared.md)). You
+  can't sort them into sections, so **neither** buckets nor bisect applies; they're
+  compared whole and never localized.
+
+So `--localize buckets` really means "use buckets where a table carries a
+chain-ordered ticket number, and `bisect` everywhere else" - which is why the tool
+only bucketises id-range-anchored tables.
+
+### When would I use `buckets` over `bisect`?
+
+Short version: reach for `buckets` when the table that mismatched is **huge and
+`bisect` is too slow**; stick with `bisect` (the default) for everything else.
+
+| Situation | Use |
+|---|---|
+| Mismatch in a **giant** table (`tx_out`, `ma_tx_out`, `epoch_stake`), or localization is dragging / timing out | `--localize buckets` (raise `--localize-buckets` for a tighter window) |
+| **Small/medium** table, or you want the **tightest** possible window | `bisect` (default - do nothing) |
+| **Not sure** | Start with the default `bisect`; if it crawls on a big table, rerun with `buckets` |
+
+Why the split: `bisect` re-scans the table on every halving (~12 rounds), which is
+nothing on a small table but 12x the work on a billion-row one - exactly where the
+one-pass `buckets` wins (measured ~11x faster above). The cost of `buckets` is
+coarser resolution (a fixed window width) unless you raise `--localize-buckets`.
+Most runs are fine on the default; you only reach for `buckets` once a *giant* table
+actually mismatches and you don't want to wait for repeated full scans.
 
 ### Trade-offs and safety
 
@@ -229,6 +309,13 @@ and - the biggest algorithmic win - avoiding the Phase-2 re-scans by computing
 per-range hashes in a single pass (a true Merkle tree) instead of re-hashing a
 giant table at each bisection level.
 
+Note the two *client* knobs, `--workers` and `--work-mem`, are a different lever and
+you set them on the tool, not in `postgresql.conf`: `--work-mem` is applied per
+connection via `SET work_mem` and `--workers` opens that many parallel
+connection-pairs (many queries at once, *not* one query on many cores like
+`max_parallel_workers_per_gather`). Full explanation in
+[running it](05-running-it.md#--workers-and---work-mem---you-do-not-set-these-in-postgresql).
+
 ## The honest caveat: the near-tip rollback zone
 
 The id-range window ([how it works, idea 3](03-how-it-works.md)) assumes row
@@ -236,16 +323,56 @@ The id-range window ([how it works, idea 3](03-how-it-works.md)) assumes row
 `x`-`y`". That holds for **settled history**. In the last few thousand blocks -
 the rollback zone - a database may have re-inserted rows out of strict order, so a
 tight id-range there could include or exclude a few neighbouring rows. The tool
-guards against this by comparing only up to the **common boundary minus a margin**
-(`--epoch-margin`, default 2 epochs), keeping the comparison in settled territory.
-Don't set the cutoff right at the tip.
+guards against this with two margins that pull the cutoff back below the lower
+tip. They default differently on purpose - and the reason is the key to using them
+correctly.
 
-For block-anchored tables there is the matching `--block-margin` knob (default 0):
-set it to pull the block cutoff back below the lower tip by roughly the security
-parameter `k` (≈2160 on mainnet) when one database's tip sits in the volatile
-rollback zone. (In the validation run this wasn't the cause of any mismatch -
-the only block-anchored difference, in `tx_out`, was a real pointer-address
-encoding fix at block ~7M, not a near-tip artifact - but the knob is there when
-you do compare close to a tip.)
+### Why the two margins default differently (`--block-margin` 0, `--epoch-margin` 2)
+
+The two risks look similar but have a different *nature*: one is conditional, the
+other is structural and unavoidable.
+
+| | Newest-data risk near the tip | Correct default |
+|---|---|---|
+| **Block-anchored tables** (`tx`, `tx_out`, ...) | Present **only if** you stopped a database inside the live rollback zone *and* the two nodes had briefly diverged there | **0** + a knob to raise |
+| **Epoch-written tables** (`epoch_stake`, `reward`, ...) | Present in **every** comparison, no matter how the nodes were stopped | **2** |
+
+**`--block-margin` defaults to 0 - because the risk is conditional.** The cutoff is
+already `min(tip1, tip2)`, so the faster database's extra blocks are dropped. If both
+databases were stopped at a clean, agreed point (or restored from snapshots at the
+same chain point), the shared history below the tip is identical and *any* margin
+would just throw away thousands of perfectly comparable blocks. But **0 is a default,
+not a guarantee**: if you stop two nodes while they are actively following the tip,
+their last few blocks are genuinely in the rollback zone and can legitimately differ
+(each node captured a momentary, possibly-different view of the volatile tip). In
+that case you *should* raise `--block-margin` toward the security parameter `k`
+(≈2160 on mainnet) to pull the cutoff back into settled territory. Two things keep 0
+workable in practice: real rollbacks are almost always 1-2 blocks (2160 is the
+theoretical *maximum* depth, rarely approached), and a genuine near-tip artifact
+would be localized (Phase 2) to those last few blocks, so you would see it was a tip
+effect rather than real corruption. (In the validation run this wasn't the cause of
+any mismatch - the only block-anchored difference, in `tx_out`, was a real
+pointer-address encoding fix at block ~7M, not a near-tip artifact - but the knob is
+there when you compare close to a live tip.)
+
+**`--epoch-margin` defaults to 2 - because the risk is structural.** The newest
+epochs of the per-epoch tables are unreliable in *every* comparison, regardless of
+how carefully the nodes are stopped, for two stacked reasons:
+
+- **The in-progress epoch** hasn't ended, so its rows are only partially written.
+- **Reward/stake calculation lags by ~2 epochs**: the rewards *earned* in epoch `e`
+  are not computed and recorded until roughly two epochs later (the mark→set→go
+  stake-snapshot pipeline). So the last one-to-two epochs of `reward`/`epoch_stake`
+  can be absent in one database and mid-write in the other, purely as a function of
+  when each stopped - not a real difference.
+
+Holding back **2** epochs (not 1) steps past *both* the in-progress epoch and that
+reward-calc lag, landing the comparison on fully-computed snapshots. Because this
+unreliability can't be avoided at the node level, a nonzero default is always
+correct - which is why epoch margin is nonzero where block margin is not.
+
+Rule of thumb: leave the defaults for a settled/at-rest comparison; raise
+`--block-margin` to ≈`k` when either database's tip sits in the live rollback zone.
+Don't set the cutoff right at the tip.
 
 **Next:** [Case study: the pool-relay port bug →](08-case-study-pool-relay-port.md)

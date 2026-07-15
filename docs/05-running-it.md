@@ -49,6 +49,26 @@ db-sync-compare --db1 "dbname=v1 host=/var/run/postgresql" \
                          --db2 "dbname=v2 host=/var/run/postgresql" --plan
 ```
 
+**Which tables show up?** By default, *every* table the two databases share (~60).
+If you pass `--tables a,b,c` it lists only those - so a plan showing, say,
+`tx_out, pool_relay, ma_tx_out, epoch_stake, multi_asset` isn't the tool picking
+"special" tables; it's just the set you asked for. (Those five happen to make a good
+sampler because each uses a *different* anchor - id-range via `tx`, via
+`pool_update`, via `tx_out`, an epoch bound, and an accumulator respectively - so one
+screen shows every way a table gets bounded. See [doc 03, idea 3](03-how-it-works.md)
+and [doc 06](06-how-each-table-is-compared.md).)
+
+**The `[...]` tag next to each name** is the table's *effort tier* - a separate thing
+from its anchor (the anchor says *how it's bounded*; the tag says *how much work the
+fingerprint does*):
+
+| Tag | Meaning |
+|---|---|
+| `[normal]` | small/medium table - full every-column fingerprint |
+| `[giant]` | an enormous table (`tx_out`, `ma_tx_out`, `epoch_stake`, ...) - gets the cheaper *tiered* check by default (count + numeric sum/min/max + a fingerprint over the cheap columns); `--full` forces the exhaustive fingerprint. See [tiering, idea 4](03-how-it-works.md) and [`GIANT_TABLES`](06-how-each-table-is-compared.md) |
+| `[accumulator]` | no chain coordinate - compared whole (`WHERE TRUE`); see [doc 06](06-how-each-table-is-compared.md) |
+| `[excluded]` | a non-chain table the tool deliberately doesn't compare |
+
 ### `--block-range LO:HI` - fast spot-check
 
 Compare only a window of the chain (by block height). Great for a quick
@@ -82,8 +102,8 @@ db-sync-compare --db1 ... --db2 ... --json report.json
 | `--full` | off | exhaustive every-column fingerprint on the giant tables too |
 | `--giant-fk-depth N` | 1 | how deep to translate foreign keys on giants in tiered mode |
 | `--cutoff-block N` | lower tip | override the common boundary block height |
-| `--block-margin N` | 0 | pull the block cutoff back N blocks below the lower tip, to stay out of the volatile near-tip rollback zone (mainnet `k`≈2160) |
-| `--epoch-margin N` | 2 | epochs to hold back from the tip (avoid the in-progress epoch) |
+| `--block-margin N` | 0 | pull the block cutoff back N blocks below the lower tip, to stay out of the volatile near-tip rollback zone (mainnet `k`≈2160); raise it near a live tip - [why 0 is only a default](07-performance-and-scaling.md#why-the-two-margins-default-differently---block-margin-0---epoch-margin-2) |
+| `--epoch-margin N` | 2 | epochs to hold back from the tip - past the in-progress epoch *and* the ~2-epoch reward-calc lag ([why 2](07-performance-and-scaling.md#why-the-two-margins-default-differently---block-margin-0---epoch-margin-2)) |
 | `--workers N` | 4 | tables compared in parallel (each uses 2 connections) |
 | `--work-mem SIZE` | `256MB` | per-session `work_mem` for the translation hash joins |
 | `--statement-timeout MS` | 0 (none) | abort any single query after this many ms |
@@ -92,6 +112,48 @@ db-sync-compare --db1 ... --db2 ... --json report.json
 | `--localize-buckets N` | 1024 | number of chain windows for `--localize buckets` (capped 5000) |
 | `--verify-accumulators` | off | for accumulator `COUNT_DIFF`s, subset-check the two key sets to confirm a count delta is purely tip-gap extra rows (see [doc 06](06-how-each-table-is-compared.md#how-to-verify-an-accumulator-count_diff-tip-gap-or-real)) |
 | `--json PATH` | - | write a structured JSON report |
+
+### `--workers` and `--work-mem` - you do *not* set these in PostgreSQL
+
+A common misconception: that these need configuring in `postgresql.conf`. **They
+don't - the tool applies both itself.**
+
+Think of each PostgreSQL server as a **kitchen**. Every connection a program opens
+gets a dedicated **cook** (PostgreSQL runs one server process per connection). Your
+queries are the orders.
+
+**`--work-mem SIZE` - the size of each cook's countertop.** `work_mem` is a real
+PostgreSQL setting: how much memory a single sort or hash step may use before
+spilling the overflow to temporary files on disk. The fingerprint's foreign-key
+translation uses **hash joins** - exactly that memory-hungry step - so a bigger
+`work_mem` keeps them in RAM instead of constantly spilling to temp disk (faster).
+You *can* set it globally in `postgresql.conf`, but you don't have to: the tool runs
+`SET work_mem = '...'` on **each comparison connection it opens** (`db.py`; the only
+exception is the lightweight read-only key-stream connection used by
+`--verify-accumulators`, which doesn't need it). That overrides the value for **that
+one session only** - no config edit, no restart, no superuser, and no effect on anyone
+else or any other connection. When the tool disconnects, it's gone.
+
+**`--workers N` - how many orders you place at once.** This is **not a PostgreSQL
+setting at all** - it's pure client-side parallelism. The tool uses a thread pool;
+each worker opens **its own pair of connections** (one to DB1, one to DB2 - that's
+"each uses 2 connections") and compares one table. So `--workers 4` means up to **4
+tables compared at once** over up to 8 connections. You aren't telling PostgreSQL to
+"spin up workers"; you're just opening more connections and firing queries
+concurrently, and because each connection is its own server process, the kitchen
+works on them in parallel.
+
+Two caveats:
+
+- **Memory multiplies.** Total RAM pressure is roughly `workers x connections x
+  work_mem x (hash/sort steps per query)`, so raise `--workers` and `--work-mem`
+  together with an eye on the machine's RAM.
+- **This is a *different* parallelism from PostgreSQL's own.** The server setting
+  `max_parallel_workers_per_gather` lets a **single** query use several CPU cores for
+  one big scan (intra-query). The tool doesn't set that - if you want it, it's a
+  genuine PostgreSQL config. `--workers` is the *other* kind: many queries at once
+  (inter-query), driven by the client. See
+  [performance and scaling](07-performance-and-scaling.md).
 
 ## Reading the output
 

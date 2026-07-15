@@ -62,8 +62,9 @@ have **inserted and deleted different rows along the way**. That leaves differen
 fingerprints in the bookkeeping (specifically, in the row `id` numbers), which
 [primer 05](05-surrogate-ids-sequences-and-drift.md) is entirely about.
 
-> Want more depth on db-sync's architecture, threads, and schema? The parent
-> `cardano-db-sync` repository has a detailed set of docs under `.claude/docs/`.
-> This primer is only what you need for the comparison tool.
+> Want more depth on db-sync's architecture, threads, and schema? See the upstream
+> [`IntersectMBO/cardano-db-sync`](https://github.com/IntersectMBO/cardano-db-sync)
+> repository and its [`doc/`](https://github.com/IntersectMBO/cardano-db-sync/tree/master/doc)
+> directory. This primer is only what you need for the comparison tool.
 
 **Next:** [Migrations and schema stages →](06-migrations-and-schema-stages.md)

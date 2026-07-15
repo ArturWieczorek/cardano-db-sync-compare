@@ -260,6 +260,9 @@ ANCHORS: dict[str, tuple] = {
     # `epoch` is still a table; on the new schema the finalized-epoch aggregate is
     # compared via `epoch_finalized` below (same columns, same `no` epoch anchor).
     "epoch": ("epoch", "no"),
+    # On the new schema (v49) the finalised aggregates are compared here instead
+    # of via the `epoch` view above - bounded by epoch, same `no` column. Inert on
+    # older schemas that lack the table (superset pattern, like `address` below).
     "epoch_finalized": ("epoch", "no"),
     "epoch_stake": ("epoch", "epoch_no"),
     "epoch_stake_progress": ("epoch", "epoch_no"),
