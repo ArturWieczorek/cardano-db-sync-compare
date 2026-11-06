@@ -8,6 +8,7 @@ from db_sync_comparator.sql import (
     JoinBuilder,
     bound_predicate,
     build_anchor,
+    epoch_capped_expr,
     hash_sql,
     quote_ident,
     value_sql,
@@ -83,3 +84,8 @@ def test_value_sql():
     sql = value_sql(p, "TRUE")
     assert sql is not None
     assert 'sum(t0."value"::numeric)' in sql
+
+
+def test_epoch_capped_expr_hides_values_above_the_cutoff_epoch():
+    # A value at or below the cutoff is kept as is; anything above becomes NULL.
+    assert epoch_capped_expr("dropped_epoch", 300) == 'CASE WHEN t0."dropped_epoch" <= 300 THEN t0."dropped_epoch" END'

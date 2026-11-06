@@ -37,6 +37,7 @@ class TablePlan:
     value_col: str | None = None  # numeric column for the cheap sum/min/max proof
     skipped_cols: list[str] = field(default_factory=list)  # columns dropped (deep FK / unmapped)
     extra_cols: dict[str, list[str]] = field(default_factory=dict)  # version-only columns
+    epoch_capped_cols: list[str] = field(default_factory=list)  # hashed as NULL above the cutoff epoch
 
 
 @dataclass
@@ -61,6 +62,7 @@ class TableResult:
     # Fields added after 1.0.0 go last, so positional construction keeps working.
     localized_truncated: bool = False  # Phase 2 stopped at its window cap; more may exist
     localize_error: str = ""  # why Phase 2 failed for this table (empty when it did not)
+    epoch_capped_cols: list[str] = field(default_factory=list)  # hashed as NULL above the cutoff epoch
 
 
 @dataclass

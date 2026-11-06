@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from db_sync_comparator.registries import (
+    ANCHORS,
     EXCLUDED_TABLES,
     FK_MAP,
     GIANT_TABLES,
     GLOBAL_FK,
+    LIFECYCLE_EPOCH_COLUMNS,
     NATURAL_KEYS,
     looks_like_fk,
     resolve_fk,
@@ -102,3 +104,21 @@ def test_epoch_view_split_v49():
     assert (kind, spine, col) == ("epoch", None, None)
     assert expr == 't0."no"'
     assert "epoch_sync_enabled" in EXCLUDED_TABLES
+
+
+def test_lifecycle_epoch_columns_are_plain_columns_of_block_anchored_tables():
+    # The cap is applied to rows already bounded by the block cutoff, so each
+    # registered table must be id-range anchored (not epoch / accumulator), and
+    # its capped columns must be plain values, never foreign keys.
+    from db_sync_comparator.sql import build_anchor
+
+    assert LIFECYCLE_EPOCH_COLUMNS["gov_action_proposal"] == (
+        "dropped_epoch",
+        "enacted_epoch",
+        "expired_epoch",
+        "ratified_epoch",
+    )
+    for table, cols in LIFECYCLE_EPOCH_COLUMNS.items():
+        assert build_anchor(ANCHORS[table])[0] == "idrange", table
+        for col in cols:
+            assert resolve_fk(table, col) is None and not looks_like_fk(col), (table, col)

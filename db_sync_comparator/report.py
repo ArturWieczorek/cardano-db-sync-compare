@@ -58,6 +58,8 @@ def print_summary(results: list[TableResult], excluded: list[TablePlan]) -> tupl
                 print(f"      -> localize failed: {r.localize_error}")
             if r.skipped_cols:
                 print(f"      (note: columns not hashed: {r.skipped_cols})")
+            if r.epoch_capped_cols:
+                print(f"      (note: values above the cutoff epoch not compared: {r.epoch_capped_cols})")
     if errors:
         print("\nERRORS:")
         for r in errors:
@@ -112,6 +114,7 @@ def build_json_report(
                 "seconds": round(r.seconds, 2),
                 "skipped_cols": r.skipped_cols,
                 "schema_drift": r.schema_drift,
+                "epoch_capped_cols": r.epoch_capped_cols,
                 "localized": r.localized,
                 "localized_truncated": r.localized_truncated,
                 "localize_error": r.localize_error or None,

@@ -34,7 +34,13 @@ def compare_table(
     timeout_ms: int,
 ) -> TableResult:
     """Hash ``plan``'s table in both databases and classify the outcome."""
-    r = TableResult(plan.name, plan.kind, skipped_cols=plan.skipped_cols, schema_drift=plan.extra_cols)
+    r = TableResult(
+        plan.name,
+        plan.kind,
+        skipped_cols=plan.skipped_cols,
+        schema_drift=plan.extra_cols,
+        epoch_capped_cols=plan.epoch_capped_cols,
+    )
     start = time.time()
     try:
         pred1 = bound_predicate(plan, ranges1, cutoff_epoch, in_block_range)

@@ -41,6 +41,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`gov_action_proposal` no longer fails a comparison just because the two
+  databases stopped in different epochs.** db-sync writes a proposal row when the
+  proposal is submitted, and fills in `ratified_epoch`, `enacted_epoch`,
+  `dropped_epoch` and `expired_epoch` later, at the epoch boundary where that
+  happens (`updateGovAction*Stmt` in db-sync's
+  `Statement/GovernanceAndVoting.hs`). So an old proposal, well below the block
+  cutoff, still changes when the further-synced database crosses another
+  boundary. Every comparison whose two tips were in different epochs reported a
+  `HASH_DIFF` and exit code 1 for that reason alone - 5 rows on preprod and 63 on
+  preview in the 13.7.2.1 vs 13.8.0.0 comparison, and it was the only failure when
+  comparing two copies of the **same** db-sync version (preview 13.7.2.1, tips in
+  epochs 1354 and 1366). Real example: proposal `c26ecb07...#0` (created in epoch
+  295) has `expired_epoch = 302` in both preprod databases, but `dropped_epoch` is
+  NULL in the 13.7.2.1 database (tip in epoch 302) and 303 in the 13.8.0.0 one
+  (tip in epoch 322) - the older database simply had not reached epoch 303 yet.
+  Now these four columns are hashed as NULL when their value is above the run's
+  cutoff epoch (`CASE WHEN col <= <cutoff_epoch> THEN col END`), so only values
+  both databases already know are compared. Every boundary up to the lower tip's
+  epoch has been processed by both, so a disagreement at or below the cutoff epoch
+  is still found. The columns are listed in `LIFECYCLE_EPOCH_COLUMNS`
+  (registries.py); the run prints a `note:` line naming them, `--plan` shows the
+  capped SQL, and the `--json` report gives each table's `epoch_capped_cols`.
+  **Behaviour change:** a default run can now report `MATCH` for
+  `gov_action_proposal` where it used to report `HASH_DIFF`. This is on by default
+  on purpose (approved by the owner as a correctness fix, see AGENTS.md); when
+  nothing is above the cutoff epoch the hash is byte-for-byte the same as before.
+  What it gives up: a lifecycle difference in the epochs between the cutoff epoch
+  and the lower tip (the `--epoch-margin`, 2 by default) is not compared - the same
+  window the epoch-anchored tables already skip. Covered by unit tests (the SQL,
+  the plan, the registry, the report) and a new governance fixture: a value set
+  only by the ahead database in a later epoch now MATCHes (and is a `HASH_DIFF`
+  without the cap), a disagreement at the cutoff epoch is still a `HASH_DIFF` and
+  is localized to its block, and the capped hash equals the raw hash when nothing
+  is above the cutoff.
+
 - **Phase 2 now says when it stopped early, and keeps a record of a failed
   localization.** The default (bisection) localizer stops after 8 differing
   windows and used to drop the rest of the search without a word, so a short list

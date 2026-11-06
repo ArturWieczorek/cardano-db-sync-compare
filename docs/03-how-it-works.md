@@ -79,6 +79,13 @@ into 1.8 seconds). Because each database has *its own* drifted ticket numbers, t
 low/high values differ between the two databases - but they select the **same set
 of chain facts**, which is the whole point.
 
+> One more subtlety: a few columns are filled in *after* their row was written -
+> a governance proposal gets its ratified / enacted / dropped / expired epoch at a
+> later epoch boundary. Those values are compared only up to the common epoch
+> (anything later is treated as "not known yet"), so two databases that stopped in
+> different epochs are not reported as different. See
+> [how each table is compared](06-how-each-table-is-compared.md).
+
 > A subtlety made honest: this assumes ticket numbers run in chain order, which is
 > true for settled history. Near the very tip (the rollback zone) it can wobble,
 > so the comparison stays a safe margin below the tip. See

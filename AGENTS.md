@@ -63,7 +63,11 @@ sections below; this is the contract.
 Two standing rules that override convenience:
 
 - **New capability is opt-in and defaults to today's behaviour** (a flag, off by
-  default). Never silently change what an existing invocation does.
+  default). Never silently change what an existing invocation does. The one
+  exception: a **correctness fix** that removes a provably false difference or
+  closes a silent coverage gap may change the default output, but only with the
+  owner's explicit approval, recorded in the CHANGELOG under "Fixed" with a
+  **Behaviour change** note (example: the `gov_action_proposal` lifecycle-epoch cap).
 - **Never add load to a running comparison.** A mainnet run takes ~9-10h; if one is
   in flight, defer heavy work (extra scans, new big queries) until it finishes.
 

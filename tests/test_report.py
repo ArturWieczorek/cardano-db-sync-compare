@@ -92,3 +92,13 @@ def test_summary_shows_a_failed_localization(capsys):
     r = TableResult("tx_out", "giant", status="HASH_DIFF", localize_error="QueryCanceled: timeout")
     print_summary([r], [])
     assert "-> localize failed: QueryCanceled: timeout" in capsys.readouterr().out
+
+
+def test_json_report_lists_lifecycle_columns_capped_at_the_cutoff_epoch():
+    r = TableResult(
+        "gov_action_proposal", "normal", status="MATCH", epoch_capped_cols=["dropped_epoch", "ratified_epoch"]
+    )
+    row = _report_with([r, TableResult("block", "normal", status="MATCH")])["results"]
+    by_table = {x["table"]: x for x in row}
+    assert by_table["gov_action_proposal"]["epoch_capped_cols"] == ["dropped_epoch", "ratified_epoch"]
+    assert by_table["block"]["epoch_capped_cols"] == []

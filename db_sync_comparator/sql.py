@@ -31,6 +31,17 @@ def quote_ident(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
+def epoch_capped_expr(col: str, cutoff_epoch: int) -> str:
+    """The value of epoch column ``col``, or NULL when it is above ``cutoff_epoch``.
+
+    Used for columns db-sync sets at a later epoch boundary (see
+    ``LIFECYCLE_EPOCH_COLUMNS``): a value above the cutoff epoch is not yet known
+    to both databases, so it is hashed as if it were still unset.
+    """
+    c = f"t0.{quote_ident(col)}"
+    return f"CASE WHEN {c} <= {int(cutoff_epoch)} THEN {c} END"
+
+
 class JoinBuilder:
     """Accumulates idempotent LEFT JOINs and hands out stable aliases.
 

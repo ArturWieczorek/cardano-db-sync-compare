@@ -170,6 +170,8 @@ def _print_plan(plans: list[TablePlan], ranges1: dict, cutoff_epoch: int, in_blo
             print(f"  columns dropped (FK over depth budget): {p.skipped_cols}")
         if p.extra_cols:
             print(f"  schema drift: {p.extra_cols}")
+        if p.epoch_capped_cols:
+            print(f"  compared only up to epoch {cutoff_epoch} (NULL above it): {p.epoch_capped_cols}")
         pred = bound_predicate(p, ranges1, cutoff_epoch, in_block_range)
         print("  " + hash_sql(p, pred).replace("\n", "\n  "))
 
@@ -242,7 +244,20 @@ def main(argv: list[str] | None = None) -> int:
     print(f"DB2 spine id-ranges: {ranges2}")
     print()
 
-    plans = [plan_table(t, schema1[t], schema2[t], common_cols, args.full, args.giant_fk_depth) for t in common_tables]
+    # Lifecycle epochs db-sync sets at later boundaries are compared only up to the
+    # cutoff epoch (see LIFECYCLE_EPOCH_COLUMNS) - beyond it they depend on the tip.
+    plans = [
+        plan_table(
+            t, schema1[t], schema2[t], common_cols, args.full, args.giant_fk_depth, lifecycle_cutoff_epoch=cutoff_epoch
+        )
+        for t in common_tables
+    ]
+    capped = [f"{p.name} ({', '.join(p.epoch_capped_cols)})" for p in plans if p.epoch_capped_cols]
+    if capped:
+        print(
+            f"note: lifecycle epochs db-sync sets at a later epoch boundary are compared only up to "
+            f"epoch {cutoff_epoch} (later values depend on how far each DB has synced): {'; '.join(capped)}"
+        )
 
     # Warn about id-range tables whose anchor column is not indexed: the window
     # bound degrades to a sequential scan (fine for a full run, slow for a

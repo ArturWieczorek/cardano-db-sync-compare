@@ -130,6 +130,25 @@ id-drift and tip-gap baseline, plus:
 The corrupted-address test is the key guard: before `address_id` was mapped it
 was flagged `UNMAPPED` and dropped, so this corruption would have been invisible.
 
+### The governance fixture
+
+A third pair of databases has blocks spread over several epochs (DB1's tip is in
+epoch 2, DB2's in epoch 3) and a few `gov_action_proposal` rows, to test the
+columns db-sync fills in at a later epoch boundary
+([doc 06](06-how-each-table-is-compared.md)):
+
+| Test | Fault injected into DB2 | Expected verdict |
+|------|-------------------------|------------------|
+| baseline | none | `MATCH`, 2 proposals compared (the one in DB2's extra block is beyond the cutoff) |
+| lifecycle epoch after the cutoff | sets `dropped_epoch` / `expired_epoch` = 3 on an old proposal (only DB2 reached epoch 3) | `MATCH` - and, as a control, `HASH_DIFF` with the cap switched off |
+| lifecycle epoch at the cutoff | sets `ratified_epoch` = 2 (the cutoff epoch, known to both) | `HASH_DIFF`, localized to the proposal's block |
+| cap leaves the hash alone | none | the capped and the raw hash are identical |
+| full CLI run | DB2 dropped / expired a proposal in epoch 3 | `cli.main` exits 0, `gov_action_proposal` `MATCH` with all 4 columns in `epoch_capped_cols` (proves the command passes the cutoff epoch, not just the planner) |
+
+The second test reproduces the false difference real comparisons used to report
+(5 proposals on preprod, 63 on preview); the third proves a real disagreement is
+still caught.
+
 ### How to run them
 
 ```bash

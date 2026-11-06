@@ -83,6 +83,23 @@ whole table is read either way).
 - **The id-range window assumes settled history.** It stays a margin below the tip
   to stay out of the rollback zone ([doc 07](07-performance-and-scaling.md)); don't
   point the cutoff at the very tip.
+- **Lifecycle epochs are compared only up to the cutoff epoch.** db-sync fills
+  `gov_action_proposal.ratified/enacted/dropped/expired_epoch` in at later epoch
+  boundaries, so values above the cutoff epoch depend on how far each database has
+  synced and are hashed as NULL ([doc 06](06-how-each-table-is-compared.md)). A
+  disagreement in the `--epoch-margin` epochs just below the lower tip is therefore
+  not seen. To close that window, run `--tables gov_action_proposal --epoch-margin 0`
+  as a separate run: a margin of 0 makes the lower database's current (still
+  running) epoch part of the comparison, which is safe for these four columns but
+  can show false differences in the epoch-bounded tables (`epoch_stake`,
+  `reward`, ...), so don't use it for the whole run. Never pass a negative margin.
+- **`tx_out.consumed_by_tx_id` has the same issue in consumed / prune databases.**
+  With db-sync's `tx_out` option set to `consumed`, `prune` or `bootstrap`, an
+  output created below the cutoff gets `consumed_by_tx_id` filled in when it is
+  spent, possibly in a block only the further-synced database has. That would show
+  as a `tx_out` `HASH_DIFF`. With the default (`enable`) the column is always NULL,
+  so default databases are not affected. Not handled yet, because no consumed-mode
+  databases were available to test against.
 - **It detects, it doesn't explain.** The tool tells you *which table* and *which
   block range* differ; a human reads the actual rows to judge whether it's a
   regression or an intended change (the [case study](08-case-study-pool-relay-port.md)

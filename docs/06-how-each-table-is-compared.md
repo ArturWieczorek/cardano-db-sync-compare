@@ -329,6 +329,65 @@ window is computed per spine, not per table (see
 > different names, a *cross-version* run (pre-13.7.2.1 vs 13.7.2.1+) cannot line them
 > up; the tool prints a note when it detects that split.
 
+### Columns db-sync fills in later: `LIFECYCLE_EPOCH_COLUMNS`
+
+Bounding works because a row below the cutoff normally never changes again. One
+table breaks that rule. A **governance proposal** (`gov_action_proposal`) is
+written when it is submitted, but four of its columns are filled in **later**, at
+the epoch boundary where the event happens:
+
+| Column | Set when |
+|--------|----------|
+| `ratified_epoch` | the proposal is ratified |
+| `enacted_epoch` | it is enacted |
+| `expired_epoch` | it expires |
+| `dropped_epoch` | it is dropped (removed from the ledger) |
+
+Think of a library card. The borrowing date is written when you take the book;
+the return date is filled in weeks later. Two photocopies of the card made on
+different days disagree on the return date, although nothing is wrong with
+either copy - one was simply made before the book came back.
+
+Real example (preprod, db-sync 13.7.2.1 vs 13.8.0.0): proposal `c26ecb07...#0` was
+created in epoch 295.
+
+| | 13.7.2.1 database (tip in epoch 302) | 13.8.0.0 database (tip in epoch 322) |
+|---|---|---|
+| `expired_epoch` | 302 | 302 |
+| `dropped_epoch` | NULL | **303** |
+
+The older database never reached epoch 303, so it could not know. Hashed raw, this
+made `gov_action_proposal` a `HASH_DIFF` (and the run exit with 1) in **every**
+comparison whose tips were in different epochs - even between two copies of the
+same db-sync version.
+
+So these columns are compared **only up to the cutoff epoch**. Each value is
+hashed as NULL when it is above the cutoff epoch:
+
+```
+CASE WHEN t0."dropped_epoch" <= 300 THEN t0."dropped_epoch" END
+```
+
+With a cutoff epoch of 300, both databases hash the proposal above as
+`(expired NULL, dropped NULL)` - a MATCH. A value of 300 or lower is compared
+exactly, so a real disagreement (say one database ratified a proposal in epoch 299
+and the other did not) is still a `HASH_DIFF`. That is safe because both databases
+have processed every epoch boundary up to the lower tip's epoch, and the cutoff
+epoch is at or below it.
+
+How to see it: the run prints a `note: lifecycle epochs ... compared only up to
+epoch N` line, `--plan` shows the `CASE WHEN` SQL and a `compared only up to epoch
+N` line under the table, and the `--json` report lists the columns in each table's
+`epoch_capped_cols`. When no value is above the cutoff epoch, the hash is exactly
+the same as hashing the raw columns.
+
+What it gives up: a disagreement in the few epochs between the cutoff epoch and
+the lower tip (the `--epoch-margin`, 2 by default) is not compared - the same
+window the epoch-bounded tables (`epoch_stake`, `reward`, ...) already leave out.
+The list lives in `LIFECYCLE_EPOCH_COLUMNS` in `registries.py`; add a table there
+only if db-sync updates a plain epoch column of an already-written, block-anchored
+row (a test checks both conditions).
+
 ## Chain-anchored vs accumulator tables (the diary analogy)
 
 This is the idea behind `ANCHORS` and the whole "accumulator" notion, in plain

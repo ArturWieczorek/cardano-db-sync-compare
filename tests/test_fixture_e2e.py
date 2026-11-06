@@ -214,7 +214,7 @@ def two_dbs(_db_dsns):
 # --------------------------------------------------------------------------- #
 
 
-def _compare_one(c1, c2, table: str, full: bool = False):
+def _compare_one(c1, c2, table: str, full: bool = False, cap_lifecycle: bool = True):
     from db_sync_comparator.compare import compare_table
     from db_sync_comparator.planning import plan_table
     from db_sync_comparator.ranges import compute_spine_ranges, get_tip
@@ -226,7 +226,9 @@ def _compare_one(c1, c2, table: str, full: bool = False):
     cutoff_block, cutoff_epoch = min(bn1, bn2), min(en1, en2)
     r1 = compute_spine_ranges(c1, cutoff_block, None)
     r2 = compute_spine_ranges(c2, cutoff_block, None)
-    plan = plan_table(table, s1[table], s2[table], common, full, 1)
+    # Like cli.main: lifecycle epochs are capped at the cutoff epoch.
+    cap = cutoff_epoch if cap_lifecycle else None
+    plan = plan_table(table, s1[table], s2[table], common, full, 1, lifecycle_cutoff_epoch=cap)
     result = compare_table(plan, c1, c2, r1, r2, cutoff_epoch, False, 0)
     return plan, result, cutoff_block
 
@@ -690,3 +692,147 @@ def test_epochf_corrupted_out_sum_is_detected(two_dbs_epochf):
     _, result, _ = _compare_one(c1, c2, "epoch_finalized")
     assert result.status == "HASH_DIFF"  # out_sum is in the row hash
     assert result.n1 == result.n2  # only content changed, no row-count change
+
+
+# --------------------------------------------------------------------------- #
+# Governance fixtures + tests
+#
+# db-sync fills gov_action_proposal's lifecycle epochs (ratified / enacted /
+# dropped / expired) in at a LATER epoch boundary, after the row was inserted.
+# So a proposal below the block cutoff can still change once the further-synced
+# database crosses another boundary. Here DB1's tip is in epoch 2 and DB2's in
+# epoch 3: values up to epoch 2 are known in both and must be compared exactly;
+# a value of 3 exists only because DB2 is ahead and must not count as a
+# difference.
+# --------------------------------------------------------------------------- #
+
+_DDL_GOV = [
+    "CREATE TABLE block (id bigint PRIMARY KEY, hash bytea, block_no int, epoch_no int, slot_no bigint)",
+    "CREATE TABLE tx (id bigint PRIMARY KEY, hash bytea, block_id bigint)",
+    # Spine tables compute_spine_ranges always probes; left empty here.
+    'CREATE TABLE tx_out (id bigint PRIMARY KEY, tx_id bigint, "index" int, value numeric, address text)',
+    "CREATE TABLE pool_update (id bigint PRIMARY KEY, hash_id bigint, registered_tx_id bigint, cert_index int)",
+    "CREATE TABLE gov_action_proposal (id bigint PRIMARY KEY, tx_id bigint, index int, "
+    "ratified_epoch int, enacted_epoch int, dropped_epoch int, expired_epoch int)",
+    "CREATE TABLE meta (id bigint PRIMARY KEY, version text)",
+]
+
+_ALL_TABLES_GOV = "block, tx, tx_out, pool_update, gov_action_proposal, meta"
+
+
+def _seed_data_gov(conn, off: int, extra_tip: bool, version: str) -> None:
+    """Blocks span epochs (epoch_no = block_no // 2): DB1 block_no 0..5 (tip epoch
+    2), DB2 adds block_no 6 (epoch 3). One tx per block 1..5 (+6). Proposals: P0
+    in tx 1 with no lifecycle epoch yet, P1 in tx 3 ratified in epoch 1 and
+    enacted in epoch 2, and in the ahead DB a P2 in tx 6, beyond the cutoff."""
+    max_bn = 7 if extra_tip else 6
+    for bn in range(0, max_bn):
+        conn.execute(
+            "INSERT INTO block VALUES (%s, decode(md5(%s),'hex'), %s, %s, %s)",
+            (bn + 1 + off, f"block-{bn}", bn, bn // 2, bn),
+        )
+    for t in range(1, max_bn):
+        conn.execute("INSERT INTO tx VALUES (%s, decode(md5(%s),'hex'), %s)", (t + off, f"tx-{t}", t + 1 + off))
+    conn.execute("INSERT INTO gov_action_proposal VALUES (%s, %s, 0, NULL, NULL, NULL, NULL)", (1 + off, 1 + off))
+    conn.execute("INSERT INTO gov_action_proposal VALUES (%s, %s, 0, 1, 2, NULL, NULL)", (2 + off, 3 + off))
+    if extra_tip:
+        conn.execute("INSERT INTO gov_action_proposal VALUES (%s, %s, 0, NULL, NULL, NULL, NULL)", (3 + off, 6 + off))
+    conn.execute("INSERT INTO meta VALUES (%s, %s)", (1 + off, version))
+
+
+@pytest.fixture(scope="session")
+def _db_dsns_gov(pg_params):
+    """Two empty governance-fixture databases with the schema, created once."""
+    n1, n2 = "dbsync_cmp_gov_v1", "dbsync_cmp_gov_v2"
+    admin = psycopg.connect(_conninfo(pg_params, "postgres"), autocommit=True)
+    for n in (n1, n2):
+        admin.execute(f'DROP DATABASE IF EXISTS "{n}" WITH (FORCE)')
+        admin.execute(f'CREATE DATABASE "{n}"')
+    dsn1, dsn2 = _conninfo(pg_params, n1), _conninfo(pg_params, n2)
+    for dsn in (dsn1, dsn2):
+        with psycopg.connect(dsn, autocommit=True) as c:
+            for ddl in _DDL_GOV:
+                c.execute(ddl)
+    try:
+        yield dsn1, dsn2
+    finally:
+        for n in (n1, n2):
+            admin.execute(f'DROP DATABASE IF EXISTS "{n}" WITH (FORCE)')
+        admin.close()
+
+
+@pytest.fixture
+def two_dbs_gov(_db_dsns_gov):
+    """Reset to a clean, matching governance baseline (DB2 drifted + one epoch
+    ahead) and yield two open connections."""
+    dsn1, dsn2 = _db_dsns_gov
+    c1 = psycopg.connect(dsn1, autocommit=True)
+    c2 = psycopg.connect(dsn2, autocommit=True)
+    for c in (c1, c2):
+        c.execute(f"TRUNCATE {_ALL_TABLES_GOV}")
+    _seed_data_gov(c1, off=0, extra_tip=False, version="v1")
+    _seed_data_gov(c2, off=100, extra_tip=True, version="v2")
+    try:
+        yield c1, c2
+    finally:
+        c1.close()
+        c2.close()
+
+
+def test_gov_proposals_match_despite_id_drift(two_dbs_gov):
+    plan, result, _ = _compare_one(*two_dbs_gov, "gov_action_proposal")
+    assert plan.epoch_capped_cols == ["dropped_epoch", "enacted_epoch", "expired_epoch", "ratified_epoch"]
+    assert result.status == "MATCH", result.note
+    assert result.n1 == result.n2 == 2  # P2 is beyond the block cutoff
+
+
+def test_lifecycle_epoch_set_after_the_cutoff_epoch_is_not_a_difference(two_dbs_gov):
+    # DB2 crossed into epoch 3 and dropped/expired P0 there. DB1 cannot know that
+    # yet. This is the tip-gap false HASH_DIFF seen on real networks; it must
+    # MATCH now - and, as a control, it is still a HASH_DIFF without the cap.
+    c1, c2 = two_dbs_gov
+    c2.execute("UPDATE gov_action_proposal SET dropped_epoch = 3, expired_epoch = 3 WHERE id = 101")
+    _, capped, _ = _compare_one(c1, c2, "gov_action_proposal")
+    assert capped.status == "MATCH", capped.note
+    _, uncapped, _ = _compare_one(c1, c2, "gov_action_proposal", cap_lifecycle=False)
+    assert uncapped.status == "HASH_DIFF"
+
+
+def test_lifecycle_epoch_difference_at_or_below_the_cutoff_is_still_found(two_dbs_gov):
+    # Epoch 2 is known to both databases, so a disagreement there is real.
+    from db_sync_comparator.compare import localize
+
+    c1, c2 = two_dbs_gov
+    c2.execute("UPDATE gov_action_proposal SET ratified_epoch = 2 WHERE id = 101")
+    plan, result, cutoff = _compare_one(c1, c2, "gov_action_proposal")
+    assert result.status == "HASH_DIFF"
+    windows = localize(plan, c1, c2, 0, cutoff, cutoff, 0, min_width=0).windows
+    assert [w.split(":")[0] for w in windows] == ["block_no 1..1"]
+
+
+def test_cli_run_caps_lifecycle_epochs(two_dbs_gov, _db_dsns_gov, tmp_path):
+    # The whole command, not just the planner: a value only the ahead DB has
+    # (dropped in epoch 3, after the cutoff epoch 2) must not fail the run.
+    import json
+
+    from db_sync_comparator.cli import main
+
+    _, c2 = two_dbs_gov
+    c2.execute("UPDATE gov_action_proposal SET dropped_epoch = 3, expired_epoch = 3 WHERE id = 101")
+    report = tmp_path / "report.json"
+    dsn1, dsn2 = _db_dsns_gov
+    argv = ["--db1", dsn1, "--db2", dsn2, "--tables", "gov_action_proposal", "--epoch-margin", "0"]
+    rc = main([*argv, "--json", str(report)])
+    row = json.loads(report.read_text())["results"][0]
+    assert row["table"] == "gov_action_proposal"
+    assert row["status"] == "MATCH", row["note"]
+    assert row["epoch_capped_cols"] == ["dropped_epoch", "enacted_epoch", "expired_epoch", "ratified_epoch"]
+    assert rc == 0
+
+
+def test_lifecycle_cap_does_not_change_the_hash_when_nothing_is_above_the_cutoff(two_dbs_gov):
+    # On the baseline every lifecycle value is <= the cutoff epoch, so the capped
+    # projection must hash byte-for-byte like the raw columns did.
+    _, capped, _ = _compare_one(*two_dbs_gov, "gov_action_proposal")
+    _, uncapped, _ = _compare_one(*two_dbs_gov, "gov_action_proposal", cap_lifecycle=False)
+    assert (capped.n1, capped.h1, capped.n2, capped.h2) == (uncapped.n1, uncapped.h1, uncapped.n2, uncapped.h2)
