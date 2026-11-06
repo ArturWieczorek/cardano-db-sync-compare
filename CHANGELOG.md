@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-06
+
+Accuracy release. A default run no longer fails on
+`gov_action_proposal` just because the two databases stopped in different epochs
+(two copies of the same db-sync version now compare clean), the genesis
+committee and constitution are compared instead of silently skipped, Phase 2 says
+when its window list is cut off or failed, and `--verify-accumulators` covers
+`committee_member`. Also supports the db-sync 13.7.2.1 epoch schema (`epoch`
+view, `epoch_finalized` table). Two of these change what a default run reports
+(marked **Behaviour change** below); the CLI and the JSON report stay backward
+compatible - the JSON only gains keys. Verified before and after on real preview
+and preprod databases (db-sync 13.7.1.0, 13.7.2.1, 13.8.0.0): every real
+difference found before is still found, the expected false ones are gone.
+
 ### Added
 
 - **`--verify-accumulators` now checks `committee_member` too.** It was the only
@@ -349,6 +363,7 @@ regression.
   per-table reference, performance notes, and a worked case study of the
   `pool_relay.port` finding.
 
-[Unreleased]: https://github.com/ArturWieczorek/cardano-db-sync-compare/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/ArturWieczorek/cardano-db-sync-compare/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/ArturWieczorek/cardano-db-sync-compare/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/ArturWieczorek/cardano-db-sync-compare/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/ArturWieczorek/cardano-db-sync-compare/releases/tag/v0.1.0
