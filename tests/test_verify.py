@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from db_sync_comparator.verify import accumulator_key_sql, key_query, merge_compare
+from db_sync_comparator.verify import VERIFY_KEY_QUERIES, accumulator_key_sql, key_query, merge_compare
 
 
 def test_accumulator_key_sql_plain_columns():
@@ -23,7 +23,8 @@ def test_accumulator_key_sql_address():
 
 
 def test_accumulator_key_sql_none_when_no_natural_key():
-    # committee_member is an accumulator but has no registered natural key
+    # committee_member is an accumulator but has no registered natural key (its own
+    # columns are only ids); it is verified through a hand-written key query instead.
     assert accumulator_key_sql("committee_member") is None
 
 
@@ -57,3 +58,29 @@ def test_merge_compare_identical():
 def test_merge_compare_one_side_empty():
     r = merge_compare(iter([]), iter(["a", "b"]))
     assert (r["only_db1"], r["only_db2"], r["both"]) == (0, 2, 0)
+
+
+def test_committee_member_is_verified_through_a_hand_written_key_query():
+    q = key_query("committee_member")
+    assert q is not None
+    assert q == VERIFY_KEY_QUERIES["committee_member"]
+    assert 'FROM "committee_member" cm' in q
+    # the committee is named by its proposal (tx hash + index), or as genesis
+    assert "'genesis'" in q and "encode(tx.\"hash\", 'hex')" in q
+    assert q.rstrip().endswith('ORDER BY k COLLATE "C"')
+
+
+def test_hand_written_key_queries_only_cover_tables_without_a_plain_key():
+    # The override must never replace the generic query of a table that has one.
+    from db_sync_comparator.registries import ANCHORS
+
+    for table in VERIFY_KEY_QUERIES:
+        assert accumulator_key_sql(table) is None, table
+        assert ANCHORS[table] == ("accumulator",), table
+
+
+def test_generic_key_queries_are_unchanged():
+    assert key_query("stake_address") == (
+        'SELECT (coalesce("hash_raw"::text, \'\')) AS k FROM "stake_address" '
+        'ORDER BY (coalesce("hash_raw"::text, \'\')) COLLATE "C"'
+    )

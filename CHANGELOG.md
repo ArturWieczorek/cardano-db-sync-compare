@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`--verify-accumulators` now checks `committee_member` too.** It was the only
+  accumulator table the subset check skipped (`not verified - no plain-column
+  natural key registered`), because its own columns are only ids
+  (`committee_id`, `committee_hash_id`) plus `expiration_epoch`. Its count
+  difference therefore stayed unproven in every comparison, and the table grows
+  with every committee update in Conway. The key is now built with a hand-written
+  query (`VERIFY_KEY_QUERIES` in verify.py): the committee is named by the proposal
+  that created it (tx hash + index) or `genesis`, plus its quorum, the member's
+  `committee_hash` (`raw`, `has_script`) and `expiration_epoch`. Because the key
+  covers every column, a changed member shows as "not a subset", not as a match.
+  Real results (db-sync 13.7.2.1 vs 13.8.0.0): preview 271 vs 295 rows gives
+  `only_db1=0 only_db2=24`, preprod 103 vs 110 gives `0 / 7` - clean tip gaps; two
+  copies of preview 13.7.2.1 give `0 / 8`. Every other table keeps exactly the same
+  key query, and the check is still opt-in and advisory (it never changes a
+  verdict or the exit code). Covered by unit tests (the query, that only tables
+  without a plain key can use a hand-written one, the generic query unchanged) and
+  governance-fixture tests (same members with drifted ids verify as identical, an
+  extra member is a clean superset, and a change to any one part of the key -
+  expiration, member hash, script flag, quorum, proposal tx hash or index - is
+  "NEITHER is a subset").
+
 - **db-sync 13.7.2.1 epoch schema support (view split, schema stage-two v49,
   `migration-2-0049`).** Upstream cardano-db-sync turned `epoch` from a base table
   into a VIEW (`epoch_finalized UNION ALL epoch_current`), backed by a new
@@ -38,6 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only code that imports these functions has to read `.windows`. New
   `TableResult` fields are added after the existing ones, so building it
   positionally still works.
+- **`--verify-accumulators` "not verified" reason text.** For a table with no key
+  the reason now reads `no natural key or key query registered for <table>` (it
+  was `no plain-column natural key registered for <table>`). No table in a current
+  db-sync schema reaches it any more.
 
 ### Fixed
 

@@ -163,6 +163,9 @@ force:
 | Phase 2 on both | change both quorums in DB2 | one block window, plus the genesis line kept apart |
 | Phase 2 on an ordinary table (main fixture) | the `pool_relay` port fault | windows found, no error, nothing about rows with no block |
 | full CLI run | none | `committee` and `constitution` `MATCH` with 2 rows each, exit 0 |
+| `committee_member` verify, baseline | none (ids drift) | verified, identical key sets (3 members) |
+| `committee_member` verify, extra member | add a member in DB2 | `db1 ⊆ db2` (`only_db1=0`, `only_db2=1`) |
+| `committee_member` verify, changed member | change one part of the key in DB2: `expiration_epoch`, the member's `raw` or `has_script`, the committee's quorum, or the proposal's tx hash or index | `NEITHER is a subset` every time |
 
 ### How to run them
 

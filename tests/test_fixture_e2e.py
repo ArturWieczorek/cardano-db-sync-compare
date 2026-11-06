@@ -724,10 +724,14 @@ _DDL_GOV = [
     "voting_anchor_id bigint, script_hash bytea)",
     "CREATE TABLE epoch_state (id bigint PRIMARY KEY, committee_id bigint, no_confidence_id bigint, "
     "constitution_id bigint, epoch_no int)",
+    "CREATE TABLE committee_hash (id bigint PRIMARY KEY, raw bytea, has_script boolean)",
+    "CREATE TABLE committee_member (id bigint PRIMARY KEY, committee_id bigint, committee_hash_id bigint, "
+    "expiration_epoch int)",
 ]
 
 _ALL_TABLES_GOV = (
-    "block, tx, tx_out, pool_update, gov_action_proposal, meta, voting_anchor, committee, constitution, epoch_state"
+    "block, tx, tx_out, pool_update, gov_action_proposal, meta, voting_anchor, committee, constitution, "
+    "epoch_state, committee_hash, committee_member"
 )
 
 
@@ -766,6 +770,13 @@ def _seed_data_gov(conn, off: int, extra_tip: bool, version: str) -> None:
     conn.execute(
         "INSERT INTO constitution VALUES (%s, %s, %s, decode(md5('const-p1'),'hex'))", (2 + off, 2 + off, 2 + off)
     )
+    # Committee members: cold key A sits on the genesis committee and on P1's, key B
+    # only on P1's (ids drift with `off`, contents do not).
+    conn.execute("INSERT INTO committee_hash VALUES (%s, decode(md5('cc-a'),'hex'), false)", (1 + off,))
+    conn.execute("INSERT INTO committee_hash VALUES (%s, decode(md5('cc-b'),'hex'), true)", (2 + off,))
+    conn.execute("INSERT INTO committee_member VALUES (%s, %s, %s, 10)", (1 + off, 1 + off, 1 + off))
+    conn.execute("INSERT INTO committee_member VALUES (%s, %s, %s, 20)", (2 + off, 2 + off, 1 + off))
+    conn.execute("INSERT INTO committee_member VALUES (%s, %s, %s, 30)", (3 + off, 2 + off, 2 + off))
     for e in range(1, (3 if extra_tip else 2) + 1):
         member = 1 if e < 2 else 2
         conn.execute("INSERT INTO epoch_state VALUES (%s, %s, NULL, %s, %s)", (e + off, member + off, member + off, e))
@@ -988,3 +999,52 @@ def test_cli_run_counts_the_genesis_rows(two_dbs_gov, _db_dsns_gov, tmp_path):
         assert rows[table]["status"] == "MATCH", rows[table]["note"]
         assert rows[table]["n1"] == rows[table]["n2"] == 2
     assert rc == 0
+
+
+def test_committee_member_is_subset_checked(two_dbs_gov, _db_dsns_gov):
+    # committee_member's own columns are only ids, so it used to come back "not
+    # verified". Its key is now built through committee (proposal or genesis) and
+    # committee_hash. Same members, drifted ids -> identical key sets.
+    from db_sync_comparator.verify import verify_accumulator
+
+    v = verify_accumulator(_db_dsns_gov[0], _db_dsns_gov[1], "committee_member")
+    assert v["verified"] is True, v
+    assert (v["only_db1"], v["only_db2"], v["both"]) == (0, 0, 3)
+
+
+def test_committee_member_extra_member_is_a_clean_superset(two_dbs_gov, _db_dsns_gov):
+    # The tip-gap shape: DB2 has one more member (on P1's committee).
+    from db_sync_comparator.verify import verify_accumulator
+
+    _, c2 = two_dbs_gov
+    c2.execute("INSERT INTO committee_hash VALUES (103, decode(md5('cc-c'),'hex'), false)")
+    c2.execute("INSERT INTO committee_member VALUES (104, 102, 103, 40)")
+    v = verify_accumulator(_db_dsns_gov[0], _db_dsns_gov[1], "committee_member")
+    assert (v["only_db1"], v["only_db2"]) == (0, 1)
+    assert "db1 ⊆ db2" in v["verdict"]
+
+
+@pytest.mark.parametrize(
+    ("fault", "changed"),
+    [
+        # every part of the key, one at a time
+        ("UPDATE committee_member SET expiration_epoch = 11 WHERE id = 101", 1),  # expiration
+        ("UPDATE committee_hash SET raw = decode(md5('z'),'hex') WHERE id = 102", 1),  # which member (raw)
+        ("UPDATE committee_hash SET has_script = NOT has_script WHERE id = 102", 1),  # which member (script?)
+        ("UPDATE committee SET quorum_numerator = quorum_numerator + 1 WHERE id = 101", 1),  # quorum
+        ("UPDATE committee SET quorum_denominator = quorum_denominator + 1 WHERE id = 101", 1),
+        ("UPDATE gov_action_proposal SET index = 1 WHERE id = 102", 2),  # P1's proposal (index)
+        ("UPDATE tx SET hash = decode(md5('other'),'hex') WHERE id = 103", 2),  # P1's proposal (tx hash)
+    ],
+)
+def test_committee_member_changed_member_is_not_a_subset(two_dbs_gov, _db_dsns_gov, fault, changed):
+    # A member whose content differs is on one side only in each database ->
+    # NEITHER is a subset -> investigate. Each fault touches one part of the key
+    # (P1's committee has 2 members, so a change to its proposal moves both).
+    from db_sync_comparator.verify import verify_accumulator
+
+    _, c2 = two_dbs_gov
+    c2.execute(fault)
+    v = verify_accumulator(_db_dsns_gov[0], _db_dsns_gov[1], "committee_member")
+    assert (v["only_db1"], v["only_db2"]) == (changed, changed)
+    assert v["verdict"].startswith("NEITHER")

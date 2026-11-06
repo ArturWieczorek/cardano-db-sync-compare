@@ -45,6 +45,20 @@ ahead of releases). Then teach the tool: everything lives in
 After any change, run `--plan` and confirm there are **zero `UNMAPPED`** columns
 and that each table's anchor and dropped/translated columns look right.
 
+### Making a new accumulator subset-checkable
+
+`--verify-accumulators` needs a key per row that is the same in both databases.
+If the table has plain identifying columns, list them in `NATURAL_KEYS` (for
+example `multi_asset: [("col", "policy"), ("col", "name")]`) and you are done. If
+its own columns are only ids, write a key query in `VERIFY_KEY_QUERIES`
+(`verify.py`), like `committee_member`'s. Rules: return one text column `k` per
+row; build it only from values that are the same in both databases (hashes,
+numbers, literals - never an `id`); cover every column you want checked; and put
+the `ORDER BY k COLLATE "C"` outside a subquery (PostgreSQL cannot sort by an
+output alias inside a `COLLATE` expression). A test refuses a key query for a
+table that already has a plain-column key, so the generic path cannot be shadowed
+by accident.
+
 ## Making windowed comparison faster (if you own the DB)
 
 A few anchor columns aren't indexed (`redeemer.tx_id`, `collateral_tx_out.tx_id`),

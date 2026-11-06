@@ -110,7 +110,7 @@ db-sync-compare --db1 ... --db2 ... --json report.json
 | `--no-localize` | off | skip the Phase-2 zoom-in on mismatches |
 | `--localize` | `bisect` | localization algorithm: `bisect` (re-hash halves) or `buckets` (one-pass per-window hash - much faster on giant tables; see [doc 07](07-performance-and-scaling.md#localizing-a-mismatch---localize-bisect-vs---localize-buckets)) |
 | `--localize-buckets N` | 1024 | number of chain windows for `--localize buckets` (capped 5000) |
-| `--verify-accumulators` | off | for accumulator `COUNT_DIFF`s, subset-check the two key sets to confirm a count delta is purely tip-gap extra rows (see [doc 06](06-how-each-table-is-compared.md#how-to-verify-an-accumulator-count_diff-tip-gap-or-real)) |
+| `--verify-accumulators` | off | for accumulator `COUNT_DIFF`s, subset-check the two key sets to confirm a count delta is purely tip-gap extra rows (see [doc 06](06-how-each-table-is-compared.md#how-to-verify-an-accumulator-count_diff-tip-gap-or-real)). Covers every accumulator, including `committee_member` (key built through its committee and `committee_hash`) |
 | `--json PATH` | - | write a structured JSON report |
 
 ### `--workers` and `--work-mem` - you do *not* set these in PostgreSQL

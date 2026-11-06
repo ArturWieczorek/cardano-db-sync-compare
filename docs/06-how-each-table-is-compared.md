@@ -590,6 +590,31 @@ stake_address: only_db1=10 only_db2=0 → db2 ⊆ db1 - db1 is a clean superset 
 lacks, so the whole delta is extra tip rows. If **both** sides are non-zero,
 it's *not* a clean tip gap and deserves a closer look.
 
+**`committee_member`: a key that needs joins.** For most accumulators the key is
+one or two of the table's own columns (`multi_asset`: `policy` + `name`). A
+committee member row has none: it holds `committee_id` and `committee_hash_id`
+(ids, which drift between databases) and `expiration_epoch`. So its key is built
+through the tables those ids point at, with a hand-written query
+(`VERIFY_KEY_QUERIES` in `verify.py`):
+
+| Part of the key | Comes from | Example |
+|-----------------|------------|---------|
+| which committee | the proposal that created it, as `tx hash#index`, or `genesis` for the committee Conway started with | `genesis` |
+| its quorum | `committee.quorum_numerator` / `quorum_denominator` | `2`, `3` |
+| which member | `committee_hash.raw` (hex) and `has_script` | `ff9babf2...` (a script credential), `true` |
+| until when | `committee_member.expiration_epoch` | `1000` |
+
+(The examples are preview's genesis committee member.) The key covers every column, so a member whose expiration changed is on one side
+only in each database - "NEITHER is a subset" - rather than quietly matching.
+Real results:
+
+```
+preview, 13.7.2.1 vs 13.8.0.0:  committee_member: only_db1=0 only_db2=24 → db1 ⊆ db2
+preprod, 13.7.2.1 vs 13.8.0.0:  committee_member: only_db1=0 only_db2=7  → db1 ⊆ db2
+```
+
+Before, this table always printed `not verified`.
+
 **Why "subset" is exactly the signature of a pure tip gap.** Accumulators are
 **append-only** - they only ever *grow* as you sync further (a row is added the first
 time an object appears, never removed). So if the two databases follow the same chain

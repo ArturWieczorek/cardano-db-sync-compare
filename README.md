@@ -284,7 +284,8 @@ So there are **no surprises** about what a "match" actually covers:
   See [docs/06](docs/06-how-each-table-is-compared.md).
 - **Accumulator tables** (e.g. `multi_asset`, `stake_address`) have no chain anchor,
   so a row-**count** delta there is reported as *informational* (usually the tip
-  gap) - verify it with `--verify-accumulators`. See
+  gap) - verify it with `--verify-accumulators` (covers every accumulator,
+  `committee_member` included). See
   [docs/06](docs/06-how-each-table-is-compared.md).
 
 `db-sync-compare --plan` prints the full excluded list with the reason for each.
