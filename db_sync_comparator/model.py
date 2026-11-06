@@ -37,6 +37,9 @@ class TablePlan:
     value_col: str | None = None  # numeric column for the cheap sum/min/max proof
     skipped_cols: list[str] = field(default_factory=list)  # columns dropped (deep FK / unmapped)
     extra_cols: dict[str, list[str]] = field(default_factory=dict)  # version-only columns
+    epoch_capped_cols: list[str] = field(default_factory=list)  # hashed as NULL above the cutoff epoch
+    # (bound_table, bound_col, epoch_col) admitting rows whose anchor column is NULL
+    null_anchor: tuple[str, str, str] | None = None
 
 
 @dataclass
@@ -58,3 +61,20 @@ class TableResult:
     schema_drift: dict = field(default_factory=dict)
     localized: list[str] = field(default_factory=list)
     verify: dict = field(default_factory=dict)  # optional accumulator subset-check result
+    # Fields added after 1.0.0 go last, so positional construction keeps working.
+    localized_truncated: bool = False  # Phase 2 stopped at its window cap; more may exist
+    localize_error: str = ""  # why Phase 2 failed for this table (empty when it did not)
+    epoch_capped_cols: list[str] = field(default_factory=list)  # hashed as NULL above the cutoff epoch
+    localized_no_block: str = ""  # Phase 2 finding for rows with no block (the genesis row), if they differ
+
+
+@dataclass
+class Localization:
+    """What a Phase 2 localizer found for one table.
+
+    ``truncated`` is True when the search stopped at its window cap with parts of
+    the chain not yet searched, so more differing windows may exist.
+    """
+
+    windows: list[str]
+    truncated: bool = False

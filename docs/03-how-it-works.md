@@ -79,6 +79,18 @@ into 1.8 seconds). Because each database has *its own* drifted ticket numbers, t
 low/high values differ between the two databases - but they select the **same set
 of chain facts**, which is the whole point.
 
+> Rows with no chain position are handled too: the genesis committee and
+> constitution were not created by any proposal (their link is NULL), so a range on
+> that link would skip them. They are included when the per-epoch `epoch_state`
+> table shows they were in force within the common range.
+
+> One more subtlety: a few columns are filled in *after* their row was written -
+> a governance proposal gets its ratified / enacted / dropped / expired epoch at a
+> later epoch boundary. Those values are compared only up to the common epoch
+> (anything later is treated as "not known yet"), so two databases that stopped in
+> different epochs are not reported as different. See
+> [how each table is compared](06-how-each-table-is-compared.md).
+
 > A subtlety made honest: this assumes ticket numbers run in chain order, which is
 > true for settled history. Near the very tip (the rollback zone) it can wobble,
 > so the comparison stays a safe margin below the tip. See
@@ -186,7 +198,10 @@ blocks" down to "blocks 4,490,224-4,491,848". (This halving-and-discarding is th
 idea behind a *Merkle tree* diff, and behaves like weighing coins on a balance to
 find the odd one out.) The tool prints those narrow windows so you can pull the
 actual rows and see what changed - exactly how the
-[pool-relay port bug](08-case-study-pool-relay-port.md) was found.
+[pool-relay port bug](08-case-study-pool-relay-port.md) was found. When the
+difference is spread over many places, the search stops after the 8 lowest
+windows and **says so** ("more differing windows may exist"), so a short list is
+never mistaken for the complete one.
 
 That halving re-scans the data at each step, which is slow on a giant table, so
 there's an opt-in one-pass alternative (`--localize buckets`) that hashes ~1000

@@ -201,6 +201,37 @@ NATURAL_KEYS: dict[str, list[tuple]] = {
     "event_info": [("fk", "tx_id", "tx"), ("col", "epoch"), ("col", "type")],
 }
 
+# Columns db-sync fills in AFTER the row was inserted, at a later epoch boundary
+# (and resets to NULL when a rollback undoes that boundary). A proposal below the
+# block cutoff can therefore still change once the further-synced database
+# crosses another epoch boundary, so two databases whose tips are in different
+# epochs disagree on it even though neither is wrong. When hashing, a value above
+# the run's cutoff epoch is treated as NULL ("not known to both databases yet");
+# values at or below the cutoff epoch are compared exactly. Every boundary up to
+# the lower tip's epoch has been processed by both databases, so nothing at or
+# below the cutoff epoch can still change.
+# Source (db-sync 13.8.0.0): cardano-db/src/Cardano/Db/Statement/GovernanceAndVoting.hs
+# updateGovAction{Ratified,Enacted,Dropped,Expired}Stmt and setNull*Stmt.
+LIFECYCLE_EPOCH_COLUMNS: dict[str, tuple[str, ...]] = {
+    "gov_action_proposal": ("dropped_epoch", "enacted_epoch", "expired_epoch", "ratified_epoch"),
+}
+
+# Tables whose id-range anchor column can be NULL for rows that still belong to
+# the chain. `t0.col BETWEEN lo AND hi` is never true for a NULL, so such rows
+# were silently never compared. The genesis committee and the genesis
+# constitution are inserted at the first Conway epoch boundary with no proposal
+# (gov_action_proposal_id NULL), together with the epoch_state row that points at
+# them (db-sync 13.8.0.0 Era/Universal/Insert/GovAction.hs, insertUpdateEnacted).
+# Form: table -> (bound_table, bound_col, epoch_col). A NULL-anchored row is
+# included when a bound_table row whose bound_col points at it has
+# epoch_col <= the cutoff epoch, i.e. it existed in both databases' common range.
+# event_info.tx_id is nullable too but db-sync never writes event_info, so it is
+# deliberately not listed.
+NULL_ANCHOR_BOUNDS: dict[str, tuple[str, str, str]] = {
+    "committee": ("epoch_state", "committee_id", "epoch_no"),
+    "constitution": ("epoch_state", "constitution_id", "epoch_no"),
+}
+
 # How each table is bounded to a common chain coordinate. Forms:
 #   ("self_block",)            row is a block; use its own block_no
 #   ("block_fk", col)          join block via FK `col`; bound block_no

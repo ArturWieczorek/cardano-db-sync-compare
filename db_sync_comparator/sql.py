@@ -31,6 +31,17 @@ def quote_ident(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
+def epoch_capped_expr(col: str, cutoff_epoch: int) -> str:
+    """The value of epoch column ``col``, or NULL when it is above ``cutoff_epoch``.
+
+    Used for columns db-sync sets at a later epoch boundary (see
+    ``LIFECYCLE_EPOCH_COLUMNS``): a value above the cutoff epoch is not yet known
+    to both databases, so it is hashed as if it were still unset.
+    """
+    c = f"t0.{quote_ident(col)}"
+    return f"CASE WHEN {c} <= {int(cutoff_epoch)} THEN {c} END"
+
+
 class JoinBuilder:
     """Accumulates idempotent LEFT JOINs and hands out stable aliases.
 
@@ -127,15 +138,42 @@ def build_anchor(anchor: tuple) -> tuple[str, str | None, str | None, str | None
     return "none", None, None, None  # accumulator
 
 
-def bound_predicate(plan: TablePlan, ranges: dict, cutoff_epoch: int, in_block_range: bool) -> str:
-    """WHERE predicate for ONE database, using that database's spine id-ranges."""
+def null_anchor_predicate(plan: TablePlan, cutoff_epoch: int) -> str:
+    """WHERE predicate selecting only a table's NULL-anchored rows (e.g. the genesis
+    committee) that the bound table shows within ``cutoff_epoch``; see
+    ``NULL_ANCHOR_BOUNDS``. Requires ``plan.null_anchor``."""
+    assert plan.anchor_col is not None and plan.null_anchor is not None
+    bound_table, bound_col, epoch_col = plan.null_anchor
+    return (
+        f"(t0.{quote_ident(plan.anchor_col)} IS NULL AND EXISTS (SELECT 1 FROM {quote_ident(bound_table)} na "
+        f'WHERE na.{quote_ident(bound_col)} = t0."id" AND na.{quote_ident(epoch_col)} <= {int(cutoff_epoch)}))'
+    )
+
+
+def bound_predicate(
+    plan: TablePlan,
+    ranges: dict,
+    cutoff_epoch: int,
+    in_block_range: bool,
+    include_null_anchor: bool = False,
+) -> str:
+    """WHERE predicate for ONE database, using that database's spine id-ranges.
+
+    ``include_null_anchor`` (Phase 1 in cutoff mode only) also admits rows whose
+    anchor column is NULL, for tables in ``NULL_ANCHOR_BOUNDS``, when a row of the
+    bound table points at them in an epoch up to ``cutoff_epoch``. Such rows have
+    no chain position, so they are never part of a ``--block-range`` window or a
+    Phase 2 block window (Phase 2 checks them separately, see
+    ``compare.localize_null_anchored``).
+    """
     if plan.anchor_kind == "idrange":
         r = ranges.get(plan.spine)
-        if r is None or r[0] is None:
-            return "FALSE"  # no rows in the window
-        lo, hi = r
         assert plan.anchor_col is not None  # always set when anchor_kind == "idrange"
-        return f"t0.{quote_ident(plan.anchor_col)} BETWEEN {lo} AND {hi}"
+        col = f"t0.{quote_ident(plan.anchor_col)}"
+        base = "FALSE" if r is None or r[0] is None else f"{col} BETWEEN {r[0]} AND {r[1]}"
+        if include_null_anchor and plan.null_anchor is not None and not in_block_range:
+            return f"({base} OR {null_anchor_predicate(plan, cutoff_epoch)})"
+        return base
     if plan.anchor_kind == "epoch":
         if in_block_range:
             return "FALSE"  # epoch tables out of scope for a block window

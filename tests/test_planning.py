@@ -179,3 +179,80 @@ def test_address_table_classified_accumulator(make_schema):
     # its own content is still fingerprinted (raw/address/payment_cred), id dropped
     assert not any(e == 't0."id"' for e in p.select_exprs)
     assert any('"raw"' in e for e in p.select_exprs)
+
+
+def _gov_schemas(make_schema) -> dict:
+    return {
+        "gov_action_proposal": make_schema(
+            "gov_action_proposal",
+            ["id", "tx_id", "index", "deposit", "ratified_epoch", "enacted_epoch", "dropped_epoch", "expired_epoch"],
+        ),
+        "tx": make_schema("tx", ["id", "hash"]),
+    }
+
+
+def test_lifecycle_epochs_are_capped_at_the_cutoff_epoch(make_schema):
+    schemas = _gov_schemas(make_schema)
+    s = schemas["gov_action_proposal"]
+    p = plan_table("gov_action_proposal", s, s, _common(schemas), False, 1, lifecycle_cutoff_epoch=300)
+    for col in ("dropped_epoch", "enacted_epoch", "expired_epoch", "ratified_epoch"):
+        assert f'CASE WHEN t0."{col}" <= 300 THEN t0."{col}" END' in p.select_exprs
+        assert f't0."{col}"' not in p.select_exprs
+    assert 't0."deposit"' in p.select_exprs  # other columns untouched
+    assert p.epoch_capped_cols == ["dropped_epoch", "enacted_epoch", "expired_epoch", "ratified_epoch"]
+
+
+def test_lifecycle_epochs_are_raw_without_a_cutoff(make_schema):
+    # The default keeps today's exact projection (used by existing callers).
+    schemas = _gov_schemas(make_schema)
+    s = schemas["gov_action_proposal"]
+    p = plan_table("gov_action_proposal", s, s, _common(schemas), False, 1)
+    assert 't0."ratified_epoch"' in p.select_exprs
+    assert p.epoch_capped_cols == []
+
+
+def test_lifecycle_cutoff_does_not_touch_other_tables(make_schema):
+    schemas = {
+        "withdrawal": make_schema("withdrawal", ["id", "addr_id", "amount", "tx_id"], coltypes={"amount": "numeric"}),
+        "stake_address": make_schema("stake_address", ["id", "hash_raw"]),
+        "tx": make_schema("tx", ["id", "hash"]),
+    }
+    s = schemas["withdrawal"]
+    with_cap = plan_table("withdrawal", s, s, _common(schemas), False, 1, lifecycle_cutoff_epoch=5)
+    without = plan_table("withdrawal", s, s, _common(schemas), False, 1)
+    assert with_cap.select_exprs == without.select_exprs
+    assert with_cap.epoch_capped_cols == []
+
+
+def _committee_schemas(make_schema, with_epoch_state: bool = True) -> dict:
+    schemas = {
+        "committee": make_schema(
+            "committee", ["id", "gov_action_proposal_id", "quorum_numerator", "quorum_denominator"]
+        ),
+        "gov_action_proposal": make_schema("gov_action_proposal", ["id", "tx_id", "index"]),
+        "tx": make_schema("tx", ["id", "hash"]),
+    }
+    if with_epoch_state:
+        schemas["epoch_state"] = make_schema("epoch_state", ["id", "committee_id", "constitution_id", "epoch_no"])
+    return schemas
+
+
+def test_genesis_committee_bound_is_set_when_epoch_state_exists(make_schema):
+    schemas = _committee_schemas(make_schema)
+    s = schemas["committee"]
+    p = plan_table("committee", s, s, _common(schemas), False, 1)
+    assert p.null_anchor == ("epoch_state", "committee_id", "epoch_no")
+
+
+def test_genesis_committee_bound_is_off_without_epoch_state(make_schema):
+    # Older schemas without epoch_state keep today's predicate exactly.
+    schemas = _committee_schemas(make_schema, with_epoch_state=False)
+    s = schemas["committee"]
+    p = plan_table("committee", s, s, _common(schemas), False, 1)
+    assert p.null_anchor is None
+
+
+def test_null_anchor_bound_only_for_registered_tables(make_schema):
+    schemas = _gov_schemas(make_schema)
+    s = schemas["gov_action_proposal"]
+    assert plan_table("gov_action_proposal", s, s, _common(schemas), False, 1).null_anchor is None

@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`--verify-accumulators` now checks `committee_member` too.** It was the only
+  accumulator table the subset check skipped (`not verified - no plain-column
+  natural key registered`), because its own columns are only ids
+  (`committee_id`, `committee_hash_id`) plus `expiration_epoch`. Its count
+  difference therefore stayed unproven in every comparison, and the table grows
+  with every committee update in Conway. The key is now built with a hand-written
+  query (`VERIFY_KEY_QUERIES` in verify.py): the committee is named by the proposal
+  that created it (tx hash + index) or `genesis`, plus its quorum, the member's
+  `committee_hash` (`raw`, `has_script`) and `expiration_epoch`. Because the key
+  covers every column, a changed member shows as "not a subset", not as a match.
+  Real results (db-sync 13.7.2.1 vs 13.8.0.0): preview 271 vs 295 rows gives
+  `only_db1=0 only_db2=24`, preprod 103 vs 110 gives `0 / 7` - clean tip gaps; two
+  copies of preview 13.7.2.1 give `0 / 8`. Every other table keeps exactly the same
+  key query, and the check is still opt-in and advisory (it never changes a
+  verdict or the exit code). Covered by unit tests (the query, that only tables
+  without a plain key can use a hand-written one, the generic query unchanged) and
+  governance-fixture tests (same members with drifted ids verify as identical, an
+  extra member is a clean superset, and a change to any one part of the key -
+  expiration, member hash, script flag, quorum, proposal tx hash or index - is
+  "NEITHER is a subset").
+
 - **db-sync 13.7.2.1 epoch schema support (view split, schema stage-two v49,
   `migration-2-0049`).** Upstream cardano-db-sync turned `epoch` from a base table
   into a VIEW (`epoch_finalized UNION ALL epoch_current`), backed by a new
@@ -28,6 +49,110 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (an `epoch_finalized` table, an `epoch_sync_enabled` row, and `epoch`/`epoch_current`
   views) that assert the view is dropped, the finalised table is epoch-anchored and
   matches, and the toggle is excluded.
+
+### Changed
+
+- **Python API: `compare.localize()` and `compare.localize_buckets()` return a
+  `Localization`** (`windows`, `truncated`) instead of a plain list of strings, so
+  the caller can tell "the search stopped early" from "these are all the windows".
+  The CLI and the JSON report (the stable interface since 1.0.0) are unaffected;
+  only code that imports these functions has to read `.windows`. New
+  `TableResult` fields are added after the existing ones, so building it
+  positionally still works.
+- **`--verify-accumulators` "not verified" reason text.** For a table with no key
+  the reason now reads `no natural key or key query registered for <table>` (it
+  was `no plain-column natural key registered for <table>`). No table in a current
+  db-sync schema reaches it any more.
+
+### Fixed
+
+- **The genesis committee and the genesis constitution are now compared.** Tables
+  tied to a governance proposal are bounded with
+  `t0.gov_action_proposal_id BETWEEN lo AND hi`, and that is never true when the
+  column is NULL. db-sync inserts the **genesis** committee and constitution at the
+  first Conway epoch boundary with no proposal (`gov_action_proposal_id` NULL), so
+  these two rows were silently never compared - a corrupted genesis quorum or
+  constitution anchor would still have reported `MATCH`. Real data: 1 such row in
+  `committee` and 1 in `constitution` on both preview (first in force in epoch 646)
+  and preprod (epoch 163); the run counted 43 committees on preview where 44
+  exist. Now a NULL-anchored row is included when an `epoch_state` row points at it
+  in an epoch up to the cutoff epoch, i.e. when it is in both databases' common
+  range (`NULL_ANCHOR_BOUNDS` in registries.py). If the lower database's tip is
+  before the Conway boundary, the row is left out of **both** sides, so there is
+  no false `COUNT_DIFF`. Only Phase 1 in cutoff mode includes them: a
+  `--block-range` run and Phase 2 block windows work on block positions, which
+  these rows do not have; Phase 2 checks them as a group of their own and reports
+  `rows with no block (gov_action_proposal_id IS NULL, the genesis row): content
+  differs` when they differ - in the run log, the summary, and the new JSON key
+  `localized_no_block` (`null` otherwise), kept apart from the `localized` window
+  list so a window count is never inflated. Inert on schemas without `epoch_state`. `--plan` shows the
+  extra condition. **Behaviour change:** `committee` and `constitution` now count
+  one more row each in a default run (preview 44 and 204, preprod 7 and 2), still
+  `MATCH`; on by default with the owner's approval as a correctness fix. Covered by
+  unit tests (the SQL with the option off, on, in `--block-range` mode and with an
+  empty window; planning; the registry) and governance-fixture tests (the genesis
+  rows are counted, a corrupted genesis committee or constitution is now a
+  `HASH_DIFF`, a genesis row only past the cutoff epoch is left out of both sides,
+  Phase 2 names the genesis rows when only they differ and not when a block-anchored
+  row does, and a full CLI run counts them).
+
+- **`gov_action_proposal` no longer fails a comparison just because the two
+  databases stopped in different epochs.** db-sync writes a proposal row when the
+  proposal is submitted, and fills in `ratified_epoch`, `enacted_epoch`,
+  `dropped_epoch` and `expired_epoch` later, at the epoch boundary where that
+  happens (`updateGovAction*Stmt` in db-sync's
+  `Statement/GovernanceAndVoting.hs`). So an old proposal, well below the block
+  cutoff, still changes when the further-synced database crosses another
+  boundary. Every comparison whose two tips were in different epochs reported a
+  `HASH_DIFF` and exit code 1 for that reason alone - 5 rows on preprod and 63 on
+  preview in the 13.7.2.1 vs 13.8.0.0 comparison, and it was the only failure when
+  comparing two copies of the **same** db-sync version (preview 13.7.2.1, tips in
+  epochs 1354 and 1366). Real example: proposal `c26ecb07...#0` (created in epoch
+  295) has `expired_epoch = 302` in both preprod databases, but `dropped_epoch` is
+  NULL in the 13.7.2.1 database (tip in epoch 302) and 303 in the 13.8.0.0 one
+  (tip in epoch 322) - the older database simply had not reached epoch 303 yet.
+  Now these four columns are hashed as NULL when their value is above the run's
+  cutoff epoch (`CASE WHEN col <= <cutoff_epoch> THEN col END`), so only values
+  both databases already know are compared. Every boundary up to the lower tip's
+  epoch has been processed by both, so a disagreement at or below the cutoff epoch
+  is still found. The columns are listed in `LIFECYCLE_EPOCH_COLUMNS`
+  (registries.py); the run prints a `note:` line naming them, `--plan` shows the
+  capped SQL, and the `--json` report gives each table's `epoch_capped_cols`.
+  **Behaviour change:** a default run can now report `MATCH` for
+  `gov_action_proposal` where it used to report `HASH_DIFF`. This is on by default
+  on purpose (approved by the owner as a correctness fix, see AGENTS.md); when
+  nothing is above the cutoff epoch the hash is byte-for-byte the same as before.
+  What it gives up: a lifecycle difference in the epochs between the cutoff epoch
+  and the lower tip (the `--epoch-margin`, 2 by default) is not compared - the same
+  window the epoch-anchored tables already skip. Covered by unit tests (the SQL,
+  the plan, the registry, the report) and a new governance fixture: a value set
+  only by the ahead database in a later epoch now MATCHes (and is a `HASH_DIFF`
+  without the cap), a disagreement at the cutoff epoch is still a `HASH_DIFF` and
+  is localized to its block, and the capped hash equals the raw hash when nothing
+  is above the cutoff.
+
+- **Phase 2 now says when it stopped early, and keeps a record of a failed
+  localization.** The default (bisection) localizer stops after 8 differing
+  windows and used to drop the rest of the search without a word, so a short list
+  looked like the whole story. Real example: in the 2026-11 preprod comparison of
+  db-sync 13.7.2.1 vs 13.8.0.0, every `pool_relay` IP address differed across the
+  whole chain, but the report listed 8 windows, all inside blocks 175796-187919,
+  which read as "the bug is only there". The 8 are the **earliest** differing
+  windows (the search goes lowest block first), not a sample. Now the run log and
+  the summary add `stopped after 8 windows; more differing windows may exist`, and
+  the `--json` report carries `localized_truncated: true`. If the search finishes
+  before the cap the flag stays `false` and nothing extra is printed. The same
+  applies to epoch tables (always bisected). `--localize buckets` checks every
+  window, so it does not truncate (except on a chain too short for buckets, where
+  it falls back to bisection and says so the same way). Separately, a localization query that failed was
+  only printed; the JSON then showed `localized: []`, which looks the same as
+  "nothing found". The error now also goes into the result as `localize_error`
+  (JSON, `null` when there was none) and into the summary as
+  `-> localize failed: ...`. Both changes are report-only: verdicts and the exit
+  code are unchanged, and the JSON only gains keys. Covered by unit tests on the
+  report and fixture tests (5 differing blocks with a cap of 2 return the 2
+  lowest windows marked truncated; the default cap returns all 5, not truncated;
+  a failing query is recorded as `UndefinedTable: ...`).
 
 ## [1.0.0] - 2026-06-19
 

@@ -24,10 +24,44 @@ from db_sync_comparator.db import stream_keys
 from db_sync_comparator.registries import NATURAL_KEYS
 from db_sync_comparator.sql import quote_ident
 
+# Hand-written key queries for accumulator tables whose own columns are only ids,
+# so their key has to be built through joins. Each query must return one text
+# column `k` per row, built only from version-stable values (hashes, numbers,
+# literals - never a surrogate id), ordered by `k COLLATE "C"`. A table listed
+# here must have no plain-column natural key (a test enforces it), so the generic
+# query of every other table is untouched.
+#
+# committee_member (db-sync: committee_id -> committee, committee_hash_id ->
+# committee_hash, expiration_epoch). A committee is named by the proposal that
+# created it (tx hash + index), or "genesis" for the committee Conway started
+# with (no proposal). The member is its committee_hash (raw, has_script). The key
+# covers every column, so a changed member shows as "not a subset", not a match.
+VERIFY_KEY_QUERIES: dict[str, str] = {
+    "committee_member": (
+        "SELECT k FROM (SELECT ("
+        "CASE WHEN c.\"id\" IS NULL THEN 'missing-committee' "
+        "WHEN c.\"gov_action_proposal_id\" IS NULL THEN 'genesis' "
+        "ELSE coalesce(encode(tx.\"hash\", 'hex'), 'missing-tx') || '#' || coalesce(gap.\"index\"::text, '') END"
+        " || chr(31) || coalesce(c.\"quorum_numerator\"::text, '')"
+        " || chr(31) || coalesce(c.\"quorum_denominator\"::text, '')"
+        " || chr(31) || coalesce(encode(ch.\"raw\", 'hex'), 'missing-hash')"
+        " || chr(31) || coalesce(ch.\"has_script\"::text, '')"
+        " || chr(31) || coalesce(cm.\"expiration_epoch\"::text, '')"
+        ") AS k "
+        'FROM "committee_member" cm '
+        'LEFT JOIN "committee" c ON c."id" = cm."committee_id" '
+        'LEFT JOIN "committee_hash" ch ON ch."id" = cm."committee_hash_id" '
+        'LEFT JOIN "gov_action_proposal" gap ON gap."id" = c."gov_action_proposal_id" '
+        'LEFT JOIN "tx" tx ON tx."id" = gap."tx_id"'
+        ') keys ORDER BY k COLLATE "C"'
+    ),
+}
+
 
 def accumulator_key_sql(table: str) -> str | None:
     """SQL expression producing one comparable text key per row, or ``None`` if
-    the table has no plain-column natural key registered (e.g. `committee_member`).
+    the table has no plain-column natural key registered (e.g. `committee_member`,
+    which uses a hand-written query from ``VERIFY_KEY_QUERIES`` instead).
 
     Columns are cast to ``text`` (deterministic for bytea → ``\\x…``) and joined
     with an unprinted separator so multi-column keys can't collide.
@@ -48,8 +82,11 @@ def key_query(table: str) -> str | None:
 
     ``COLLATE "C"`` forces byte ordering, which is identical on both databases and
     matches Python's ``str`` comparison for the ASCII keys these columns produce -
-    so the two ordered streams can be merge-compared directly.
+    so the two ordered streams can be merge-compared directly. A table with a
+    hand-written query in ``VERIFY_KEY_QUERIES`` uses that instead.
     """
+    if table in VERIFY_KEY_QUERIES:
+        return VERIFY_KEY_QUERIES[table]
     expr = accumulator_key_sql(table)
     if expr is None:
         return None
@@ -111,7 +148,7 @@ def verify_accumulator(dsn1: str, dsn2: str, table: str) -> dict:
     """Subset-check an accumulator table's key sets across the two databases."""
     q = key_query(table)
     if q is None:
-        return {"verified": False, "reason": f"no plain-column natural key registered for {table}"}
+        return {"verified": False, "reason": f"no natural key or key query registered for {table}"}
     result = merge_compare(stream_keys(dsn1, q), stream_keys(dsn2, q))
     result["verified"] = True
     result["verdict"] = _verdict(result["only_db1"], result["only_db2"])

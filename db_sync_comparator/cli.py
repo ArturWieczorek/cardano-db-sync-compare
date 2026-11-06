@@ -12,7 +12,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from db_sync_comparator import __version__
-from db_sync_comparator.compare import compare_table, localize, localize_buckets
+from db_sync_comparator.compare import compare_table, localize, localize_buckets, localize_null_anchored
 from db_sync_comparator.db import connect
 from db_sync_comparator.model import TablePlan, TableResult
 from db_sync_comparator.planning import plan_table
@@ -107,6 +107,60 @@ def _verify_one(dsn1: str, dsn2: str, table: str) -> dict:
         return {"verified": False, "reason": f"verify failed: {exc}"}
 
 
+def _localize_mismatch(
+    r: TableResult,
+    p: TablePlan,
+    lc1,
+    lc2,
+    cutoff_block: int,
+    cutoff_epoch: int,
+    method: str,
+    n_buckets: int,
+    timeout_ms: int,
+) -> None:
+    """Phase 2 for one mismatching table: find the differing chain windows and
+    record them on ``r`` (with whether the search stopped early, or why it failed).
+
+    A failure is stored on the result as well as printed, so the JSON report
+    tells "localization failed" apart from "nothing localized".
+    """
+    if p.anchor_kind == "idrange":
+        lo, hi = 0, cutoff_block
+    elif p.anchor_kind == "epoch":
+        lo, hi = 0, cutoff_epoch
+    else:
+        return
+    found = None
+    try:
+        if method == "buckets" and p.anchor_kind == "idrange":
+            found = localize_buckets(p, lc1, lc2, cutoff_block, timeout_ms, n_buckets)
+        else:
+            found = localize(p, lc1, lc2, lo, hi, cutoff_block, timeout_ms)
+    except Exception as exc:
+        r.localize_error = f"{type(exc).__name__}: {exc}"
+        print(f"  {r.name}: localize failed: {r.localize_error}")
+    if found is not None:
+        r.localized = found.windows
+        r.localized_truncated = found.truncated
+        for line in r.localized:
+            print(f"  {r.name}: {line}")
+        if r.localized_truncated:
+            print(f"  {r.name}: stopped after {len(r.localized)} windows; more differing windows may exist")
+    # Rows with no block (the genesis committee / constitution) are never in a
+    # block window; check them as a group of their own. Kept apart from the
+    # windows (and from their errors), so neither result can hide the other.
+    try:
+        no_block = localize_null_anchored(p, lc1, lc2, cutoff_epoch, timeout_ms)
+    except Exception as exc:
+        err = f"{type(exc).__name__}: {exc}"
+        r.localize_error = f"{r.localize_error}; {err}" if r.localize_error else err
+        print(f"  {r.name}: localize failed (rows with no block): {err}")
+    else:
+        if no_block is not None:
+            r.localized_no_block = no_block
+            print(f"  {r.name}: {no_block}")
+
+
 def parse_block_range(spec: str | None) -> tuple[int, int] | None:
     if not spec:
         return None
@@ -130,7 +184,15 @@ def _print_plan(plans: list[TablePlan], ranges1: dict, cutoff_epoch: int, in_blo
             print(f"  columns dropped (FK over depth budget): {p.skipped_cols}")
         if p.extra_cols:
             print(f"  schema drift: {p.extra_cols}")
-        pred = bound_predicate(p, ranges1, cutoff_epoch, in_block_range)
+        if p.epoch_capped_cols:
+            print(f"  compared only up to epoch {cutoff_epoch} (NULL above it): {p.epoch_capped_cols}")
+        if p.null_anchor is not None and not in_block_range:
+            bt, bc, ec = p.null_anchor
+            print(
+                f"  + rows with NULL {p.anchor_col} (genesis), when {bt}.{bc} points at them "
+                f"with {ec} <= {cutoff_epoch}"
+            )
+        pred = bound_predicate(p, ranges1, cutoff_epoch, in_block_range, include_null_anchor=True)
         print("  " + hash_sql(p, pred).replace("\n", "\n  "))
 
 
@@ -202,7 +264,20 @@ def main(argv: list[str] | None = None) -> int:
     print(f"DB2 spine id-ranges: {ranges2}")
     print()
 
-    plans = [plan_table(t, schema1[t], schema2[t], common_cols, args.full, args.giant_fk_depth) for t in common_tables]
+    # Lifecycle epochs db-sync sets at later boundaries are compared only up to the
+    # cutoff epoch (see LIFECYCLE_EPOCH_COLUMNS) - beyond it they depend on the tip.
+    plans = [
+        plan_table(
+            t, schema1[t], schema2[t], common_cols, args.full, args.giant_fk_depth, lifecycle_cutoff_epoch=cutoff_epoch
+        )
+        for t in common_tables
+    ]
+    capped = [f"{p.name} ({', '.join(p.epoch_capped_cols)})" for p in plans if p.epoch_capped_cols]
+    if capped:
+        print(
+            f"note: lifecycle epochs db-sync sets at a later epoch boundary are compared only up to "
+            f"epoch {cutoff_epoch} (later values depend on how far each DB has synced): {'; '.join(capped)}"
+        )
 
     # Warn about id-range tables whose anchor column is not indexed: the window
     # bound degrades to a sequential scan (fine for a full run, slow for a
@@ -259,24 +334,17 @@ def main(argv: list[str] | None = None) -> int:
         lc1, lc2 = connect(args.db1, args.work_mem), connect(args.db2, args.work_mem)
         try:
             for r in mismatches:
-                p = plan_by_name[r.name]
-                if p.anchor_kind == "idrange":
-                    lo, hi = 0, cutoff_block
-                elif p.anchor_kind == "epoch":
-                    lo, hi = 0, cutoff_epoch
-                else:
-                    continue
-                try:
-                    if args.localize == "buckets" and p.anchor_kind == "idrange":
-                        r.localized = localize_buckets(
-                            p, lc1, lc2, cutoff_block, args.statement_timeout, min(args.localize_buckets, 5000)
-                        )
-                    else:
-                        r.localized = localize(p, lc1, lc2, lo, hi, cutoff_block, args.statement_timeout)
-                    for line in r.localized:
-                        print(f"  {r.name}: {line}")
-                except Exception as exc:
-                    print(f"  {r.name}: localize failed: {exc}")
+                _localize_mismatch(
+                    r,
+                    plan_by_name[r.name],
+                    lc1,
+                    lc2,
+                    cutoff_block,
+                    cutoff_epoch,
+                    args.localize,
+                    min(args.localize_buckets, 5000),
+                    args.statement_timeout,
+                )
         finally:
             lc1.close()
             lc2.close()

@@ -105,6 +105,8 @@ fault into DB2 and checks the verdict:
 | corrupted value | bump one `tx_out.value` | `HASH_DIFF` (same row count) |
 | dropped row | delete one `tx_out` row | `COUNT_DIFF` |
 | **port overflow** | set a `pool_relay.port` to `-12900` | `HASH_DIFF`, **localized** to the right block window |
+| many differing blocks | bump `tx_out.value` in blocks 1-5 | with a cap of 2: the 2 **lowest** windows, marked `truncated`; with the default cap, or a cap of exactly 5: all 5, not truncated |
+| failing localization | localize a table that does not exist | `localize_error` starts with `UndefinedTable`, no windows |
 | extra asset | insert a `multi_asset` row | `COUNT_DIFF`, flagged *informational* (accumulator) |
 
 That port-overflow test reproduces the **real regression** this tool found on
@@ -127,6 +129,43 @@ id-drift and tip-gap baseline, plus:
 
 The corrupted-address test is the key guard: before `address_id` was mapped it
 was flagged `UNMAPPED` and dropped, so this corruption would have been invisible.
+
+### The governance fixture
+
+A third pair of databases has blocks spread over several epochs (DB1's tip is in
+epoch 2, DB2's in epoch 3) and a few `gov_action_proposal` rows, to test the
+columns db-sync fills in at a later epoch boundary
+([doc 06](06-how-each-table-is-compared.md)):
+
+| Test | Fault injected into DB2 | Expected verdict |
+|------|-------------------------|------------------|
+| baseline | none | `MATCH`, 2 proposals compared (the one in DB2's extra block is beyond the cutoff) |
+| lifecycle epoch after the cutoff | sets `dropped_epoch` / `expired_epoch` = 3 on an old proposal (only DB2 reached epoch 3) | `MATCH` - and, as a control, `HASH_DIFF` with the cap switched off |
+| lifecycle epoch at the cutoff | sets `ratified_epoch` = 2 (the cutoff epoch, known to both) | `HASH_DIFF`, localized to the proposal's block |
+| cap leaves the hash alone | none | the capped and the raw hash are identical |
+| full CLI run | DB2 dropped / expired a proposal in epoch 3 | `cli.main` exits 0, `gov_action_proposal` `MATCH` with all 4 columns in `epoch_capped_cols` (proves the command passes the cutoff epoch, not just the planner) |
+
+The second test reproduces the false difference real comparisons used to report
+(5 proposals on preprod, 63 on preview); the third proves a real disagreement is
+still caught.
+
+The same fixture also has a genesis committee and constitution (no proposal, NULL
+`gov_action_proposal_id`) plus the `epoch_state` rows that say when they were in
+force:
+
+| Test | Fault injected | Expected verdict |
+|------|----------------|------------------|
+| genesis rows counted | none | `committee` and `constitution` `MATCH` with 2 rows each (it was 1 - the genesis row was skipped) |
+| corrupted genesis row | change the genesis quorum / constitution script hash in DB2 | `HASH_DIFF` (it was `MATCH`) |
+| lower DB before Conway | DB1 has no genesis committee; DB2's first appears in epoch 3, past the cutoff | `MATCH`, 1 row each side - no false `COUNT_DIFF` |
+| Phase 2 on a genesis-only difference (bisect and buckets) | change the genesis quorum in DB2 | `HASH_DIFF`; no block windows, and `localized_no_block` = `rows with no block (...the genesis row): content differs` |
+| Phase 2 on a block-anchored difference | change P1's committee quorum in DB2 | block windows only, `localized_no_block` empty |
+| Phase 2 on both | change both quorums in DB2 | one block window, plus the genesis line kept apart |
+| Phase 2 on an ordinary table (main fixture) | the `pool_relay` port fault | windows found, no error, nothing about rows with no block |
+| full CLI run | none | `committee` and `constitution` `MATCH` with 2 rows each, exit 0 |
+| `committee_member` verify, baseline | none (ids drift) | verified, identical key sets (3 members) |
+| `committee_member` verify, extra member | add a member in DB2 | `db1 ⊆ db2` (`only_db1=0`, `only_db2=1`) |
+| `committee_member` verify, changed member | change one part of the key in DB2: `expiration_epoch`, the member's `raw` or `has_script`, the committee's quorum, or the proposal's tx hash or index | `NEITHER is a subset` every time |
 
 ### How to run them
 

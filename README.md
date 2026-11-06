@@ -194,7 +194,9 @@ is it?"** by **binary search** over chain ranges, narrowing to a small block win
 so you can pull the rows and see what changed. (`--localize buckets` does the same
 in one pass - ~11× faster on giant tables; see
 [docs/07](docs/07-performance-and-scaling.md). Phase 2 is skipped under
-`--block-range`, which is already a narrow window.)
+`--block-range`, which is already a narrow window. The default search reports at
+most 8 windows, lowest first, and says `more differing windows may exist` when it
+stopped there.)
 
 These ideas are the same family used by battle-tested tools like Percona's
 `pt-table-checksum` and Datafold's `data-diff`; the bespoke parts - natural-key
@@ -273,9 +275,17 @@ So there are **no surprises** about what a "match" actually covers:
   - **volatile/operational** - `epoch_sync_time` (wall-clock), `epoch_sync_enabled`
     (operator toggle), `reverse_index` (tip-only rollback helper);
   - **SMASH operator state** - `delisted_pool`, `reserved_pool_ticker`.
+- **Rows with no block** - the genesis committee and genesis constitution (created
+  at the start of Conway, not by a proposal) - are compared when `epoch_state`
+  shows they were in force within the common range.
+- **Values db-sync fills in later** - `gov_action_proposal`'s ratified / enacted /
+  dropped / expired epochs - are compared only up to the common cutoff epoch, so
+  two databases that stopped in different epochs are not reported as different.
+  See [docs/06](docs/06-how-each-table-is-compared.md).
 - **Accumulator tables** (e.g. `multi_asset`, `stake_address`) have no chain anchor,
   so a row-**count** delta there is reported as *informational* (usually the tip
-  gap) - verify it with `--verify-accumulators`. See
+  gap) - verify it with `--verify-accumulators` (covers every accumulator,
+  `committee_member` included). See
   [docs/06](docs/06-how-each-table-is-compared.md).
 
 `db-sync-compare --plan` prints the full excluded list with the reason for each.
@@ -346,7 +356,7 @@ Everything else is optional. It produces two files you will use:
 | File | When written | What to check it for |
 |------|--------------|----------------------|
 | `run.log` (stdout, `-u`) | live, line by line | **progress** - one `OK`/`!!` line + seconds per table; the final **`SUMMARY:`** line (counts of match / discrepancies / accumulator deltas / errors); the **`DISCREPANCIES:`** and **`ERRORS:`** blocks; and the wrapper's **`FINISHED rc=… WALL_SECONDS=…`** line (exit code + total wall-clock) |
-| `report.json` (`--json`) | once, at the very end | the **machine-readable result** - per-table `status`, row counts, the two set-hashes, `seconds`, `localized` windows, `skipped_cols`. This is what you archive, diff between runs, or feed to CI |
+| `report.json` (`--json`) | once, at the very end | the **machine-readable result** - per-table `status`, row counts, the two set-hashes, `seconds`, `localized` windows (plus `localized_truncated` when the search stopped early, and `localize_error` when it failed), `skipped_cols`, `epoch_capped_cols` (columns compared only up to the cutoff epoch). This is what you archive, diff between runs, or feed to CI |
 
 When it finishes, triage in three commands:
 

@@ -45,6 +45,20 @@ ahead of releases). Then teach the tool: everything lives in
 After any change, run `--plan` and confirm there are **zero `UNMAPPED`** columns
 and that each table's anchor and dropped/translated columns look right.
 
+### Making a new accumulator subset-checkable
+
+`--verify-accumulators` needs a key per row that is the same in both databases.
+If the table has plain identifying columns, list them in `NATURAL_KEYS` (for
+example `multi_asset: [("col", "policy"), ("col", "name")]`) and you are done. If
+its own columns are only ids, write a key query in `VERIFY_KEY_QUERIES`
+(`verify.py`), like `committee_member`'s. Rules: return one text column `k` per
+row; build it only from values that are the same in both databases (hashes,
+numbers, literals - never an `id`); cover every column you want checked; and put
+the `ORDER BY k COLLATE "C"` outside a subquery (PostgreSQL cannot sort by an
+output alias inside a `COLLATE` expression). A test refuses a key query for a
+table that already has a plain-column key, so the generic path cannot be shadowed
+by accident.
+
 ## Making windowed comparison faster (if you own the DB)
 
 A few anchor columns aren't indexed (`redeemer.tx_id`, `collateral_tx_out.tx_id`),
@@ -83,6 +97,28 @@ whole table is read either way).
 - **The id-range window assumes settled history.** It stays a margin below the tip
   to stay out of the rollback zone ([doc 07](07-performance-and-scaling.md)); don't
   point the cutoff at the very tip.
+- **A difference in a genesis governance row has no block window.** The genesis
+  committee and constitution have no block, so Phase 2 reports them as one line,
+  `rows with no block (gov_action_proposal_id IS NULL, the genesis row): ...`
+  (JSON `localized_no_block`), rather than a block range ([doc 06](06-how-each-table-is-compared.md)). Query the
+  row with `gov_action_proposal_id IS NULL` directly.
+- **Lifecycle epochs are compared only up to the cutoff epoch.** db-sync fills
+  `gov_action_proposal.ratified/enacted/dropped/expired_epoch` in at later epoch
+  boundaries, so values above the cutoff epoch depend on how far each database has
+  synced and are hashed as NULL ([doc 06](06-how-each-table-is-compared.md)). A
+  disagreement in the `--epoch-margin` epochs just below the lower tip is therefore
+  not seen. To close that window, run `--tables gov_action_proposal --epoch-margin 0`
+  as a separate run: a margin of 0 makes the lower database's current (still
+  running) epoch part of the comparison, which is safe for these four columns but
+  can show false differences in the epoch-bounded tables (`epoch_stake`,
+  `reward`, ...), so don't use it for the whole run. Never pass a negative margin.
+- **`tx_out.consumed_by_tx_id` has the same issue in consumed / prune databases.**
+  With db-sync's `tx_out` option set to `consumed`, `prune` or `bootstrap`, an
+  output created below the cutoff gets `consumed_by_tx_id` filled in when it is
+  spent, possibly in a block only the further-synced database has. That would show
+  as a `tx_out` `HASH_DIFF`. With the default (`enable`) the column is always NULL,
+  so default databases are not affected. Not handled yet, because no consumed-mode
+  databases were available to test against.
 - **It detects, it doesn't explain.** The tool tells you *which table* and *which
   block range* differ; a human reads the actual rows to judge whether it's a
   regression or an intended change (the [case study](08-case-study-pool-relay-port.md)

@@ -110,7 +110,7 @@ db-sync-compare --db1 ... --db2 ... --json report.json
 | `--no-localize` | off | skip the Phase-2 zoom-in on mismatches |
 | `--localize` | `bisect` | localization algorithm: `bisect` (re-hash halves) or `buckets` (one-pass per-window hash - much faster on giant tables; see [doc 07](07-performance-and-scaling.md#localizing-a-mismatch---localize-bisect-vs---localize-buckets)) |
 | `--localize-buckets N` | 1024 | number of chain windows for `--localize buckets` (capped 5000) |
-| `--verify-accumulators` | off | for accumulator `COUNT_DIFF`s, subset-check the two key sets to confirm a count delta is purely tip-gap extra rows (see [doc 06](06-how-each-table-is-compared.md#how-to-verify-an-accumulator-count_diff-tip-gap-or-real)) |
+| `--verify-accumulators` | off | for accumulator `COUNT_DIFF`s, subset-check the two key sets to confirm a count delta is purely tip-gap extra rows (see [doc 06](06-how-each-table-is-compared.md#how-to-verify-an-accumulator-count_diff-tip-gap-or-real)). Covers every accumulator, including `committee_member` (key built through its committee and `committee_hash`) |
 | `--json PATH` | - | write a structured JSON report |
 
 ### `--workers` and `--work-mem` - you do *not* set these in PostgreSQL
@@ -196,6 +196,30 @@ it differs:
 Phase 2: localizing mismatches ...
   pool_relay: block_no 4490224..4491848: content differs (db1 n=681, db2 n=681)
 ```
+
+Extra lines can appear under a table, in the live output and in the final
+`DISCREPANCIES:` block:
+
+- `stopped after 8 windows; more differing windows may exist` - the default
+  (bisection) search reports at most 8 windows, **the lowest block (or epoch)
+  numbers first**, and then stops. The difference may go on higher up the chain.
+  Do not read the 8 as "the only places that differ". For the full list on a
+  block-anchored table, rerun with `--localize buckets` (it checks every window;
+  only on a chain too short for buckets does it fall back to bisection, and then
+  says so the same way).
+- `rows with no block (gov_action_proposal_id IS NULL, the genesis row): content
+  differs (...)` - only for `committee` and `constitution`: the genesis committee
+  or constitution differs. These rows have no block, so they are checked as one
+  group of their own; query the row with `gov_action_proposal_id IS NULL` in both
+  databases.
+- `localize failed: <error>` - the localization query itself failed (for example a
+  `--statement-timeout`). The verdict above it still stands; only the "where" is
+  missing.
+
+In the `--json` report each table also has `localized_truncated` (`true` when the
+search stopped early), `localize_error` (the error text, or `null`) and
+`localized_no_block` (the genesis-row line above, or `null`). Neither
+changes the verdict or the exit code.
 
 > **`--block-range` skips Phase 2.** Localization exists to *narrow a huge chain
 > range down to a small window*. With `--block-range LO:HI` you have already handed

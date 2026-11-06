@@ -329,6 +329,119 @@ window is computed per spine, not per table (see
 > different names, a *cross-version* run (pre-13.7.2.1 vs 13.7.2.1+) cannot line them
 > up; the tool prints a note when it detects that split.
 
+### Rows with no chain position: `NULL_ANCHOR_BOUNDS`
+
+Governance tables such as `committee` and `constitution` are tied to the chain
+through the proposal that created them, `gov_action_proposal_id`, and bounded with
+
+```
+WHERE t0."gov_action_proposal_id" BETWEEN <low> AND <high>
+```
+
+But the **genesis** committee and the **genesis** constitution - the ones Conway
+started with - were not created by any proposal. db-sync inserts them at the first
+Conway epoch boundary with `gov_action_proposal_id` = NULL. In SQL,
+`NULL BETWEEN 1 AND 9` is not true, so those two rows were quietly left out of
+every comparison. A wrong genesis quorum would have shown as `MATCH`.
+
+Real data, both db-sync 13.8.0.0 databases:
+
+| | preview | preprod |
+|---|---|---|
+| genesis committee | id 1, quorum 2/3, first in force in epoch **646** | id 1, quorum 2/3, epoch **163** |
+| genesis constitution | id 1, anchor `ipfs://bafkreifnwj6...`, epoch **646** | same anchor, epoch **163** |
+
+These rows have no block, but they do have a time: the `epoch_state` table records,
+per epoch, which committee and constitution were in force, and db-sync writes the
+genesis rows and that `epoch_state` row together. So a NULL-anchored row is now
+included when an `epoch_state` row points at it in an epoch up to the cutoff epoch:
+
+```
+WHERE (t0."gov_action_proposal_id" BETWEEN 1 AND 1525
+       OR (t0."gov_action_proposal_id" IS NULL AND EXISTS (
+             SELECT 1 FROM "epoch_state" na
+             WHERE na."committee_id" = t0."id" AND na."epoch_no" <= 1364)))
+```
+
+That keeps the "only what both databases have" rule. If one database stopped
+before the Conway boundary, its `epoch_state` has no such row, and in the other
+database the genesis row first appears after the cutoff - so it is left out on
+**both** sides and nothing false is reported.
+
+Where it applies: Phase 1 in normal (cutoff) mode, and `--plan` shows the extra
+condition. Not in `--block-range` mode, which is a window of block positions, and
+these rows have none. Phase 2 cannot put them in a block window either, so it
+checks them as a group of their own and, when they differ, adds a line such as
+
+```
+committee: rows with no block (gov_action_proposal_id IS NULL, the genesis row): content differs (db1 n=1, db2 n=1)
+```
+
+next to any block windows (in the JSON it is `localized_no_block`, kept apart from
+the `localized` window list) - then query the row with
+`gov_action_proposal_id IS NULL` in both databases. The registry entry is `NULL_ANCHOR_BOUNDS` in
+`registries.py`. `event_info.tx_id` is also nullable, but db-sync never writes
+`event_info`, so it is not listed.
+
+### Columns db-sync fills in later: `LIFECYCLE_EPOCH_COLUMNS`
+
+Bounding works because a row below the cutoff normally never changes again. One
+table breaks that rule. A **governance proposal** (`gov_action_proposal`) is
+written when it is submitted, but four of its columns are filled in **later**, at
+the epoch boundary where the event happens:
+
+| Column | Set when |
+|--------|----------|
+| `ratified_epoch` | the proposal is ratified |
+| `enacted_epoch` | it is enacted |
+| `expired_epoch` | it expires |
+| `dropped_epoch` | it is dropped (removed from the ledger) |
+
+Think of a library card. The borrowing date is written when you take the book;
+the return date is filled in weeks later. Two photocopies of the card made on
+different days disagree on the return date, although nothing is wrong with
+either copy - one was simply made before the book came back.
+
+Real example (preprod, db-sync 13.7.2.1 vs 13.8.0.0): proposal `c26ecb07...#0` was
+created in epoch 295.
+
+| | 13.7.2.1 database (tip in epoch 302) | 13.8.0.0 database (tip in epoch 322) |
+|---|---|---|
+| `expired_epoch` | 302 | 302 |
+| `dropped_epoch` | NULL | **303** |
+
+The older database never reached epoch 303, so it could not know. Hashed raw, this
+made `gov_action_proposal` a `HASH_DIFF` (and the run exit with 1) in **every**
+comparison whose tips were in different epochs - even between two copies of the
+same db-sync version.
+
+So these columns are compared **only up to the cutoff epoch**. Each value is
+hashed as NULL when it is above the cutoff epoch:
+
+```
+CASE WHEN t0."dropped_epoch" <= 300 THEN t0."dropped_epoch" END
+```
+
+With a cutoff epoch of 300, both databases hash the proposal above as
+`(expired NULL, dropped NULL)` - a MATCH. A value of 300 or lower is compared
+exactly, so a real disagreement (say one database ratified a proposal in epoch 299
+and the other did not) is still a `HASH_DIFF`. That is safe because both databases
+have processed every epoch boundary up to the lower tip's epoch, and the cutoff
+epoch is at or below it.
+
+How to see it: the run prints a `note: lifecycle epochs ... compared only up to
+epoch N` line, `--plan` shows the `CASE WHEN` SQL and a `compared only up to epoch
+N` line under the table, and the `--json` report lists the columns in each table's
+`epoch_capped_cols`. When no value is above the cutoff epoch, the hash is exactly
+the same as hashing the raw columns.
+
+What it gives up: a disagreement in the few epochs between the cutoff epoch and
+the lower tip (the `--epoch-margin`, 2 by default) is not compared - the same
+window the epoch-bounded tables (`epoch_stake`, `reward`, ...) already leave out.
+The list lives in `LIFECYCLE_EPOCH_COLUMNS` in `registries.py`; add a table there
+only if db-sync updates a plain epoch column of an already-written, block-anchored
+row (a test checks both conditions).
+
 ## Chain-anchored vs accumulator tables (the diary analogy)
 
 This is the idea behind `ANCHORS` and the whole "accumulator" notion, in plain
@@ -476,6 +589,31 @@ stake_address: only_db1=10 only_db2=0 → db2 ⊆ db1 - db1 is a clean superset 
 `only_db2 = 0` is the decisive fact: the behind DB has **nothing** the ahead DB
 lacks, so the whole delta is extra tip rows. If **both** sides are non-zero,
 it's *not* a clean tip gap and deserves a closer look.
+
+**`committee_member`: a key that needs joins.** For most accumulators the key is
+one or two of the table's own columns (`multi_asset`: `policy` + `name`). A
+committee member row has none: it holds `committee_id` and `committee_hash_id`
+(ids, which drift between databases) and `expiration_epoch`. So its key is built
+through the tables those ids point at, with a hand-written query
+(`VERIFY_KEY_QUERIES` in `verify.py`):
+
+| Part of the key | Comes from | Example |
+|-----------------|------------|---------|
+| which committee | the proposal that created it, as `tx hash#index`, or `genesis` for the committee Conway started with | `genesis` |
+| its quorum | `committee.quorum_numerator` / `quorum_denominator` | `2`, `3` |
+| which member | `committee_hash.raw` (hex) and `has_script` | `ff9babf2...` (a script credential), `true` |
+| until when | `committee_member.expiration_epoch` | `1000` |
+
+(The examples are preview's genesis committee member.) The key covers every column, so a member whose expiration changed is on one side
+only in each database - "NEITHER is a subset" - rather than quietly matching.
+Real results:
+
+```
+preview, 13.7.2.1 vs 13.8.0.0:  committee_member: only_db1=0 only_db2=24 → db1 ⊆ db2
+preprod, 13.7.2.1 vs 13.8.0.0:  committee_member: only_db1=0 only_db2=7  → db1 ⊆ db2
+```
+
+Before, this table always printed `not verified`.
 
 **Why "subset" is exactly the signature of a pure tip gap.** Accumulators are
 **append-only** - they only ever *grow* as you sync further (a row is added the first

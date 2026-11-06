@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import time
 
-from db_sync_comparator.model import TablePlan, TableResult
+from db_sync_comparator.model import Localization, TablePlan, TableResult
 from db_sync_comparator.ranges import block_edges, bucket_boundary_ids, compute_spine_ranges
-from db_sync_comparator.sql import bound_predicate, hash_sql, hash_sql_bucketed, value_sql
+from db_sync_comparator.sql import bound_predicate, hash_sql, hash_sql_bucketed, null_anchor_predicate, value_sql
 
 
 def run_scalar(conn, sql: str, timeout_ms: int) -> tuple:
@@ -34,11 +34,17 @@ def compare_table(
     timeout_ms: int,
 ) -> TableResult:
     """Hash ``plan``'s table in both databases and classify the outcome."""
-    r = TableResult(plan.name, plan.kind, skipped_cols=plan.skipped_cols, schema_drift=plan.extra_cols)
+    r = TableResult(
+        plan.name,
+        plan.kind,
+        skipped_cols=plan.skipped_cols,
+        schema_drift=plan.extra_cols,
+        epoch_capped_cols=plan.epoch_capped_cols,
+    )
     start = time.time()
     try:
-        pred1 = bound_predicate(plan, ranges1, cutoff_epoch, in_block_range)
-        pred2 = bound_predicate(plan, ranges2, cutoff_epoch, in_block_range)
+        pred1 = bound_predicate(plan, ranges1, cutoff_epoch, in_block_range, include_null_anchor=True)
+        pred2 = bound_predicate(plan, ranges2, cutoff_epoch, in_block_range, include_null_anchor=True)
         a = run_scalar(conn1, hash_sql(plan, pred1), timeout_ms)
         b = run_scalar(conn2, hash_sql(plan, pred2), timeout_ms)
         r.n1, r.h1 = a[0], (int(a[1]), int(a[2]))
@@ -93,11 +99,13 @@ def localize(
     timeout_ms: int,
     max_leaves: int = 8,
     min_width: int = 2000,
-) -> list[str]:
+) -> Localization:
     """Binary-search the ``[lo, hi]`` window on the common chain coordinate.
 
     ``block_no`` for id-range tables, ``epoch_no`` for epoch tables. Returns the
-    narrowest windows whose hashes still differ.
+    narrowest windows whose hashes still differ, lowest first. The search stops
+    after ``max_leaves`` windows; if parts of the range were still unsearched at
+    that point, the result is marked ``truncated`` (more windows may differ).
     """
     found: list[str] = []
     is_block = plan.anchor_kind == "idrange"
@@ -130,7 +138,22 @@ def localize(
         mid = (a + b) // 2
         stack.append((mid + 1, b))
         stack.append((a, mid))
-    return found
+    return Localization(found, truncated=bool(stack))
+
+
+def localize_null_anchored(plan: TablePlan, conn1, conn2, cutoff_epoch: int, timeout_ms: int) -> str | None:
+    """Phase 2 for the rows that have no block (``NULL_ANCHOR_BOUNDS``, e.g. the
+    genesis committee): block windows never contain them, so hash them as one
+    group of their own. Returns a report line when they differ, else ``None``."""
+    if plan.null_anchor is None:
+        return None
+    pred = null_anchor_predicate(plan, cutoff_epoch)
+    a = run_scalar(conn1, hash_sql(plan, pred), timeout_ms)
+    b = run_scalar(conn2, hash_sql(plan, pred), timeout_ms)
+    if (a[0], int(a[1]), int(a[2])) == (b[0], int(b[1]), int(b[2])):
+        return None
+    kindword = "content differs" if a[0] == b[0] else "row count differs"
+    return f"rows with no block ({plan.anchor_col} IS NULL, the genesis row): {kindword} (db1 n={a[0]}, db2 n={b[0]})"
 
 
 def align_bucket_boundaries(edges: list[int], b1: list, b2: list) -> tuple[list[int], list[int], list[int]]:
@@ -174,7 +197,7 @@ def localize_buckets(
     cutoff_block: int,
     timeout_ms: int,
     n_buckets: int = 1024,
-) -> list[str]:
+) -> Localization:
     """Single-pass bucket localization for id-range (chain-anchored) tables.
 
     Splits the chain into ~``n_buckets`` block windows, computes the set-hash per
@@ -210,4 +233,4 @@ def localize_buckets(
             lo, hi = ke[v - 1], ke[v]
         kindword = "content differs" if a[0] == b[0] else "row count differs"
         found.append(f"block_no {lo}..{hi}: {kindword} (db1 n={a[0]}, db2 n={b[0]})")
-    return found
+    return Localization(found)  # every bucket is checked, so the list is complete
