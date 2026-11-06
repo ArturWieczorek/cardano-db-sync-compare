@@ -83,6 +83,11 @@ whole table is read either way).
 - **The id-range window assumes settled history.** It stays a margin below the tip
   to stay out of the rollback zone ([doc 07](07-performance-and-scaling.md)); don't
   point the cutoff at the very tip.
+- **A difference in a genesis governance row has no block window.** The genesis
+  committee and constitution have no block, so Phase 2 reports them as one line,
+  `rows with no block (gov_action_proposal_id IS NULL, the genesis row): ...`
+  (JSON `localized_no_block`), rather than a block range ([doc 06](06-how-each-table-is-compared.md)). Query the
+  row with `gov_action_proposal_id IS NULL` directly.
 - **Lifecycle epochs are compared only up to the cutoff epoch.** db-sync fills
   `gov_action_proposal.ratified/enacted/dropped/expired_epoch` in at later epoch
   boundaries, so values above the cutoff epoch depend on how far each database has

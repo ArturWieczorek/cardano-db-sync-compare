@@ -222,3 +222,37 @@ def test_lifecycle_cutoff_does_not_touch_other_tables(make_schema):
     without = plan_table("withdrawal", s, s, _common(schemas), False, 1)
     assert with_cap.select_exprs == without.select_exprs
     assert with_cap.epoch_capped_cols == []
+
+
+def _committee_schemas(make_schema, with_epoch_state: bool = True) -> dict:
+    schemas = {
+        "committee": make_schema(
+            "committee", ["id", "gov_action_proposal_id", "quorum_numerator", "quorum_denominator"]
+        ),
+        "gov_action_proposal": make_schema("gov_action_proposal", ["id", "tx_id", "index"]),
+        "tx": make_schema("tx", ["id", "hash"]),
+    }
+    if with_epoch_state:
+        schemas["epoch_state"] = make_schema("epoch_state", ["id", "committee_id", "constitution_id", "epoch_no"])
+    return schemas
+
+
+def test_genesis_committee_bound_is_set_when_epoch_state_exists(make_schema):
+    schemas = _committee_schemas(make_schema)
+    s = schemas["committee"]
+    p = plan_table("committee", s, s, _common(schemas), False, 1)
+    assert p.null_anchor == ("epoch_state", "committee_id", "epoch_no")
+
+
+def test_genesis_committee_bound_is_off_without_epoch_state(make_schema):
+    # Older schemas without epoch_state keep today's predicate exactly.
+    schemas = _committee_schemas(make_schema, with_epoch_state=False)
+    s = schemas["committee"]
+    p = plan_table("committee", s, s, _common(schemas), False, 1)
+    assert p.null_anchor is None
+
+
+def test_null_anchor_bound_only_for_registered_tables(make_schema):
+    schemas = _gov_schemas(make_schema)
+    s = schemas["gov_action_proposal"]
+    assert plan_table("gov_action_proposal", s, s, _common(schemas), False, 1).null_anchor is None

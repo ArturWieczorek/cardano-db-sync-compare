@@ -41,6 +41,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The genesis committee and the genesis constitution are now compared.** Tables
+  tied to a governance proposal are bounded with
+  `t0.gov_action_proposal_id BETWEEN lo AND hi`, and that is never true when the
+  column is NULL. db-sync inserts the **genesis** committee and constitution at the
+  first Conway epoch boundary with no proposal (`gov_action_proposal_id` NULL), so
+  these two rows were silently never compared - a corrupted genesis quorum or
+  constitution anchor would still have reported `MATCH`. Real data: 1 such row in
+  `committee` and 1 in `constitution` on both preview (first in force in epoch 646)
+  and preprod (epoch 163); the run counted 43 committees on preview where 44
+  exist. Now a NULL-anchored row is included when an `epoch_state` row points at it
+  in an epoch up to the cutoff epoch, i.e. when it is in both databases' common
+  range (`NULL_ANCHOR_BOUNDS` in registries.py). If the lower database's tip is
+  before the Conway boundary, the row is left out of **both** sides, so there is
+  no false `COUNT_DIFF`. Only Phase 1 in cutoff mode includes them: a
+  `--block-range` run and Phase 2 block windows work on block positions, which
+  these rows do not have; Phase 2 checks them as a group of their own and reports
+  `rows with no block (gov_action_proposal_id IS NULL, the genesis row): content
+  differs` when they differ - in the run log, the summary, and the new JSON key
+  `localized_no_block` (`null` otherwise), kept apart from the `localized` window
+  list so a window count is never inflated. Inert on schemas without `epoch_state`. `--plan` shows the
+  extra condition. **Behaviour change:** `committee` and `constitution` now count
+  one more row each in a default run (preview 44 and 204, preprod 7 and 2), still
+  `MATCH`; on by default with the owner's approval as a correctness fix. Covered by
+  unit tests (the SQL with the option off, on, in `--block-range` mode and with an
+  empty window; planning; the registry) and governance-fixture tests (the genesis
+  rows are counted, a corrupted genesis committee or constitution is now a
+  `HASH_DIFF`, a genesis row only past the cutoff epoch is left out of both sides,
+  Phase 2 names the genesis rows when only they differ and not when a block-anchored
+  row does, and a full CLI run counts them).
+
 - **`gov_action_proposal` no longer fails a comparison just because the two
   databases stopped in different epochs.** db-sync writes a proposal row when the
   proposal is submitted, and fills in `ratified_epoch`, `enacted_epoch`,

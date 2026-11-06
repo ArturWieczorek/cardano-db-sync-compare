@@ -38,6 +38,8 @@ class TablePlan:
     skipped_cols: list[str] = field(default_factory=list)  # columns dropped (deep FK / unmapped)
     extra_cols: dict[str, list[str]] = field(default_factory=dict)  # version-only columns
     epoch_capped_cols: list[str] = field(default_factory=list)  # hashed as NULL above the cutoff epoch
+    # (bound_table, bound_col, epoch_col) admitting rows whose anchor column is NULL
+    null_anchor: tuple[str, str, str] | None = None
 
 
 @dataclass
@@ -63,6 +65,7 @@ class TableResult:
     localized_truncated: bool = False  # Phase 2 stopped at its window cap; more may exist
     localize_error: str = ""  # why Phase 2 failed for this table (empty when it did not)
     epoch_capped_cols: list[str] = field(default_factory=list)  # hashed as NULL above the cutoff epoch
+    localized_no_block: str = ""  # Phase 2 finding for rows with no block (the genesis row), if they differ
 
 
 @dataclass

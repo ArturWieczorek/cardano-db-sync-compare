@@ -79,6 +79,11 @@ into 1.8 seconds). Because each database has *its own* drifted ticket numbers, t
 low/high values differ between the two databases - but they select the **same set
 of chain facts**, which is the whole point.
 
+> Rows with no chain position are handled too: the genesis committee and
+> constitution were not created by any proposal (their link is NULL), so a range on
+> that link would skip them. They are included when the per-epoch `epoch_state`
+> table shows they were in force within the common range.
+
 > One more subtlety: a few columns are filled in *after* their row was written -
 > a governance proposal gets its ratified / enacted / dropped / expired epoch at a
 > later epoch boundary. Those values are compared only up to the common epoch

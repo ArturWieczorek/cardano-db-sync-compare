@@ -197,7 +197,7 @@ Phase 2: localizing mismatches ...
   pool_relay: block_no 4490224..4491848: content differs (db1 n=681, db2 n=681)
 ```
 
-Two extra lines can appear under a table, in the live output and in the final
+Extra lines can appear under a table, in the live output and in the final
 `DISCREPANCIES:` block:
 
 - `stopped after 8 windows; more differing windows may exist` - the default
@@ -207,12 +207,18 @@ Two extra lines can appear under a table, in the live output and in the final
   block-anchored table, rerun with `--localize buckets` (it checks every window;
   only on a chain too short for buckets does it fall back to bisection, and then
   says so the same way).
+- `rows with no block (gov_action_proposal_id IS NULL, the genesis row): content
+  differs (...)` - only for `committee` and `constitution`: the genesis committee
+  or constitution differs. These rows have no block, so they are checked as one
+  group of their own; query the row with `gov_action_proposal_id IS NULL` in both
+  databases.
 - `localize failed: <error>` - the localization query itself failed (for example a
   `--statement-timeout`). The verdict above it still stands; only the "where" is
   missing.
 
 In the `--json` report each table also has `localized_truncated` (`true` when the
-search stopped early) and `localize_error` (the error text, or `null`). Neither
+search stopped early), `localize_error` (the error text, or `null`) and
+`localized_no_block` (the genesis-row line above, or `null`). Neither
 changes the verdict or the exit code.
 
 > **`--block-range` skips Phase 2.** Localization exists to *narrow a huge chain

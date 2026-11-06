@@ -42,3 +42,27 @@ def test_localize_mismatch_records_what_the_localizer_found(monkeypatch):
     assert r.localized == windows
     assert r.localized_truncated is True
     assert r.localize_error == ""
+
+
+def test_plan_shows_the_genesis_condition_only_in_cutoff_mode(capsys):
+    # --plan must print the SQL Phase 1 really runs: with the NULL-anchor
+    # condition in cutoff mode, and without it for a --block-range run.
+    from db_sync_comparator import cli
+    from db_sync_comparator.model import TablePlan
+
+    plan = TablePlan(
+        "committee",
+        "normal",
+        select_exprs=['t0."quorum_numerator"'],
+        anchor_kind="idrange",
+        spine="gov_action_proposal",
+        anchor_col="gov_action_proposal_id",
+        null_anchor=("epoch_state", "committee_id", "epoch_no"),
+    )
+    ranges = {"gov_action_proposal": (1, 9)}
+    cli._print_plan([plan], ranges, 300, False)
+    out = capsys.readouterr().out
+    assert 'IS NULL AND EXISTS (SELECT 1 FROM "epoch_state" na' in out
+    assert "rows with NULL gov_action_proposal_id (genesis)" in out
+    cli._print_plan([plan], ranges, 300, True)
+    assert "IS NULL" not in capsys.readouterr().out

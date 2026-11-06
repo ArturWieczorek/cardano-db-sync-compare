@@ -10,6 +10,7 @@ from db_sync_comparator.registries import (
     GLOBAL_FK,
     LIFECYCLE_EPOCH_COLUMNS,
     NATURAL_KEYS,
+    NULL_ANCHOR_BOUNDS,
     looks_like_fk,
     resolve_fk,
 )
@@ -122,3 +123,17 @@ def test_lifecycle_epoch_columns_are_plain_columns_of_block_anchored_tables():
         assert build_anchor(ANCHORS[table])[0] == "idrange", table
         for col in cols:
             assert resolve_fk(table, col) is None and not looks_like_fk(col), (table, col)
+
+
+def test_null_anchor_bounds_point_back_at_the_table_and_are_epoch_anchored():
+    # A NULL-anchored row is admitted only if a row of the bound table refers to
+    # it (via the bound column) in an epoch up to the cutoff. So the bound column
+    # must be an FK to the table itself, the bound table must be epoch-anchored,
+    # and the table must otherwise be id-range anchored.
+    from db_sync_comparator.sql import build_anchor
+
+    assert set(NULL_ANCHOR_BOUNDS) == {"committee", "constitution"}
+    for table, (bound_table, bound_col, epoch_col) in NULL_ANCHOR_BOUNDS.items():
+        assert build_anchor(ANCHORS[table])[0] == "idrange", table
+        assert resolve_fk(bound_table, bound_col) == table, (bound_table, bound_col)
+        assert ANCHORS[bound_table] == ("epoch", epoch_col), bound_table

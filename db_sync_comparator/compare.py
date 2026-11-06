@@ -11,7 +11,7 @@ import time
 
 from db_sync_comparator.model import Localization, TablePlan, TableResult
 from db_sync_comparator.ranges import block_edges, bucket_boundary_ids, compute_spine_ranges
-from db_sync_comparator.sql import bound_predicate, hash_sql, hash_sql_bucketed, value_sql
+from db_sync_comparator.sql import bound_predicate, hash_sql, hash_sql_bucketed, null_anchor_predicate, value_sql
 
 
 def run_scalar(conn, sql: str, timeout_ms: int) -> tuple:
@@ -43,8 +43,8 @@ def compare_table(
     )
     start = time.time()
     try:
-        pred1 = bound_predicate(plan, ranges1, cutoff_epoch, in_block_range)
-        pred2 = bound_predicate(plan, ranges2, cutoff_epoch, in_block_range)
+        pred1 = bound_predicate(plan, ranges1, cutoff_epoch, in_block_range, include_null_anchor=True)
+        pred2 = bound_predicate(plan, ranges2, cutoff_epoch, in_block_range, include_null_anchor=True)
         a = run_scalar(conn1, hash_sql(plan, pred1), timeout_ms)
         b = run_scalar(conn2, hash_sql(plan, pred2), timeout_ms)
         r.n1, r.h1 = a[0], (int(a[1]), int(a[2]))
@@ -139,6 +139,21 @@ def localize(
         stack.append((mid + 1, b))
         stack.append((a, mid))
     return Localization(found, truncated=bool(stack))
+
+
+def localize_null_anchored(plan: TablePlan, conn1, conn2, cutoff_epoch: int, timeout_ms: int) -> str | None:
+    """Phase 2 for the rows that have no block (``NULL_ANCHOR_BOUNDS``, e.g. the
+    genesis committee): block windows never contain them, so hash them as one
+    group of their own. Returns a report line when they differ, else ``None``."""
+    if plan.null_anchor is None:
+        return None
+    pred = null_anchor_predicate(plan, cutoff_epoch)
+    a = run_scalar(conn1, hash_sql(plan, pred), timeout_ms)
+    b = run_scalar(conn2, hash_sql(plan, pred), timeout_ms)
+    if (a[0], int(a[1]), int(a[2])) == (b[0], int(b[1]), int(b[2])):
+        return None
+    kindword = "content differs" if a[0] == b[0] else "row count differs"
+    return f"rows with no block ({plan.anchor_col} IS NULL, the genesis row): {kindword} (db1 n={a[0]}, db2 n={b[0]})"
 
 
 def align_bucket_boundaries(edges: list[int], b1: list, b2: list) -> tuple[list[int], list[int], list[int]]:

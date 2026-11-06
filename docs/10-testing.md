@@ -149,6 +149,21 @@ The second test reproduces the false difference real comparisons used to report
 (5 proposals on preprod, 63 on preview); the third proves a real disagreement is
 still caught.
 
+The same fixture also has a genesis committee and constitution (no proposal, NULL
+`gov_action_proposal_id`) plus the `epoch_state` rows that say when they were in
+force:
+
+| Test | Fault injected | Expected verdict |
+|------|----------------|------------------|
+| genesis rows counted | none | `committee` and `constitution` `MATCH` with 2 rows each (it was 1 - the genesis row was skipped) |
+| corrupted genesis row | change the genesis quorum / constitution script hash in DB2 | `HASH_DIFF` (it was `MATCH`) |
+| lower DB before Conway | DB1 has no genesis committee; DB2's first appears in epoch 3, past the cutoff | `MATCH`, 1 row each side - no false `COUNT_DIFF` |
+| Phase 2 on a genesis-only difference (bisect and buckets) | change the genesis quorum in DB2 | `HASH_DIFF`; no block windows, and `localized_no_block` = `rows with no block (...the genesis row): content differs` |
+| Phase 2 on a block-anchored difference | change P1's committee quorum in DB2 | block windows only, `localized_no_block` empty |
+| Phase 2 on both | change both quorums in DB2 | one block window, plus the genesis line kept apart |
+| Phase 2 on an ordinary table (main fixture) | the `pool_relay` port fault | windows found, no error, nothing about rows with no block |
+| full CLI run | none | `committee` and `constitution` `MATCH` with 2 rows each, exit 0 |
+
 ### How to run them
 
 ```bash

@@ -275,6 +275,9 @@ So there are **no surprises** about what a "match" actually covers:
   - **volatile/operational** - `epoch_sync_time` (wall-clock), `epoch_sync_enabled`
     (operator toggle), `reverse_index` (tip-only rollback helper);
   - **SMASH operator state** - `delisted_pool`, `reserved_pool_ticker`.
+- **Rows with no block** - the genesis committee and genesis constitution (created
+  at the start of Conway, not by a proposal) - are compared when `epoch_state`
+  shows they were in force within the common range.
 - **Values db-sync fills in later** - `gov_action_proposal`'s ratified / enacted /
   dropped / expired epochs - are compared only up to the common cutoff epoch, so
   two databases that stopped in different epochs are not reported as different.

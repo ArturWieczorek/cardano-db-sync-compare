@@ -102,3 +102,14 @@ def test_json_report_lists_lifecycle_columns_capped_at_the_cutoff_epoch():
     by_table = {x["table"]: x for x in row}
     assert by_table["gov_action_proposal"]["epoch_capped_cols"] == ["dropped_epoch", "ratified_epoch"]
     assert by_table["block"]["epoch_capped_cols"] == []
+
+
+def test_report_shows_the_rows_with_no_block_apart_from_the_windows(capsys):
+    line = "rows with no block (gov_action_proposal_id IS NULL, the genesis row): content differs (db1 n=1, db2 n=1)"
+    r = TableResult("committee", "normal", status="HASH_DIFF", localized_no_block=line)
+    rows = {x["table"]: x for x in _report_with([r, TableResult("block", "normal", status="MATCH")])["results"]}
+    assert rows["committee"]["localized_no_block"] == line
+    assert rows["committee"]["localized"] == []
+    assert rows["block"]["localized_no_block"] is None
+    print_summary([r], [])
+    assert f"-> {line}" in capsys.readouterr().out

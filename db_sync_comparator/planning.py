@@ -15,6 +15,7 @@ from db_sync_comparator.registries import (
     EXCLUDED_TABLES,
     GIANT_TABLES,
     LIFECYCLE_EPOCH_COLUMNS,
+    NULL_ANCHOR_BOUNDS,
     NUMERIC_TYPES,
     VALUE_COLUMNS,
     looks_like_fk,
@@ -113,6 +114,13 @@ def plan_table(
         extra_cols={"only_db1": only1, "only_db2": only2} if (only1 or only2) else {},
         epoch_capped_cols=capped,
     )
+    bound = NULL_ANCHOR_BOUNDS.get(name)
+    if bound is not None and anchor_kind == "idrange":
+        bound_table, bound_col, epoch_col = bound
+        # Only when both databases have the bound table and its columns (older
+        # schemas without epoch_state keep today's predicate exactly).
+        if {bound_col, epoch_col} <= common_cols.get(bound_table, set()):
+            plan.null_anchor = bound
     for vc in VALUE_COLUMNS:
         # must be a real numeric column (datum.value / redeemer_data.value are jsonb)
         if (

@@ -12,7 +12,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from db_sync_comparator import __version__
-from db_sync_comparator.compare import compare_table, localize, localize_buckets
+from db_sync_comparator.compare import compare_table, localize, localize_buckets, localize_null_anchored
 from db_sync_comparator.db import connect
 from db_sync_comparator.model import TablePlan, TableResult
 from db_sync_comparator.planning import plan_table
@@ -130,6 +130,7 @@ def _localize_mismatch(
         lo, hi = 0, cutoff_epoch
     else:
         return
+    found = None
     try:
         if method == "buckets" and p.anchor_kind == "idrange":
             found = localize_buckets(p, lc1, lc2, cutoff_block, timeout_ms, n_buckets)
@@ -138,13 +139,26 @@ def _localize_mismatch(
     except Exception as exc:
         r.localize_error = f"{type(exc).__name__}: {exc}"
         print(f"  {r.name}: localize failed: {r.localize_error}")
-        return
-    r.localized = found.windows
-    r.localized_truncated = found.truncated
-    for line in r.localized:
-        print(f"  {r.name}: {line}")
-    if r.localized_truncated:
-        print(f"  {r.name}: stopped after {len(r.localized)} windows; more differing windows may exist")
+    if found is not None:
+        r.localized = found.windows
+        r.localized_truncated = found.truncated
+        for line in r.localized:
+            print(f"  {r.name}: {line}")
+        if r.localized_truncated:
+            print(f"  {r.name}: stopped after {len(r.localized)} windows; more differing windows may exist")
+    # Rows with no block (the genesis committee / constitution) are never in a
+    # block window; check them as a group of their own. Kept apart from the
+    # windows (and from their errors), so neither result can hide the other.
+    try:
+        no_block = localize_null_anchored(p, lc1, lc2, cutoff_epoch, timeout_ms)
+    except Exception as exc:
+        err = f"{type(exc).__name__}: {exc}"
+        r.localize_error = f"{r.localize_error}; {err}" if r.localize_error else err
+        print(f"  {r.name}: localize failed (rows with no block): {err}")
+    else:
+        if no_block is not None:
+            r.localized_no_block = no_block
+            print(f"  {r.name}: {no_block}")
 
 
 def parse_block_range(spec: str | None) -> tuple[int, int] | None:
@@ -172,7 +186,13 @@ def _print_plan(plans: list[TablePlan], ranges1: dict, cutoff_epoch: int, in_blo
             print(f"  schema drift: {p.extra_cols}")
         if p.epoch_capped_cols:
             print(f"  compared only up to epoch {cutoff_epoch} (NULL above it): {p.epoch_capped_cols}")
-        pred = bound_predicate(p, ranges1, cutoff_epoch, in_block_range)
+        if p.null_anchor is not None and not in_block_range:
+            bt, bc, ec = p.null_anchor
+            print(
+                f"  + rows with NULL {p.anchor_col} (genesis), when {bt}.{bc} points at them "
+                f"with {ec} <= {cutoff_epoch}"
+            )
+        pred = bound_predicate(p, ranges1, cutoff_epoch, in_block_range, include_null_anchor=True)
         print("  " + hash_sql(p, pred).replace("\n", "\n  "))
 
 

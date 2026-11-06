@@ -102,7 +102,11 @@ step names the function so you can jump to it.
     `cli._localize_mismatch`: it stores the windows on `TableResult.localized`, sets
     `localized_truncated` when bisection stopped at its 8-window cap with chain left
     unsearched, and on a failure stores the error in `localize_error` (and prints it)
-    - never fatal.
+    - never fatal. For `committee` / `constitution` it also runs
+    `compare.localize_null_anchored`, which hashes the rows with no block (the genesis
+    row) as one group and stores a line in `localized_no_block` when they differ. The
+    two searches run independently, so an error in one does not lose the other's
+    result.
 
 ### Phase 3 - verify, report, exit
 

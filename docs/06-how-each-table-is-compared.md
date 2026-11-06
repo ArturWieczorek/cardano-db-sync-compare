@@ -329,6 +329,60 @@ window is computed per spine, not per table (see
 > different names, a *cross-version* run (pre-13.7.2.1 vs 13.7.2.1+) cannot line them
 > up; the tool prints a note when it detects that split.
 
+### Rows with no chain position: `NULL_ANCHOR_BOUNDS`
+
+Governance tables such as `committee` and `constitution` are tied to the chain
+through the proposal that created them, `gov_action_proposal_id`, and bounded with
+
+```
+WHERE t0."gov_action_proposal_id" BETWEEN <low> AND <high>
+```
+
+But the **genesis** committee and the **genesis** constitution - the ones Conway
+started with - were not created by any proposal. db-sync inserts them at the first
+Conway epoch boundary with `gov_action_proposal_id` = NULL. In SQL,
+`NULL BETWEEN 1 AND 9` is not true, so those two rows were quietly left out of
+every comparison. A wrong genesis quorum would have shown as `MATCH`.
+
+Real data, both db-sync 13.8.0.0 databases:
+
+| | preview | preprod |
+|---|---|---|
+| genesis committee | id 1, quorum 2/3, first in force in epoch **646** | id 1, quorum 2/3, epoch **163** |
+| genesis constitution | id 1, anchor `ipfs://bafkreifnwj6...`, epoch **646** | same anchor, epoch **163** |
+
+These rows have no block, but they do have a time: the `epoch_state` table records,
+per epoch, which committee and constitution were in force, and db-sync writes the
+genesis rows and that `epoch_state` row together. So a NULL-anchored row is now
+included when an `epoch_state` row points at it in an epoch up to the cutoff epoch:
+
+```
+WHERE (t0."gov_action_proposal_id" BETWEEN 1 AND 1525
+       OR (t0."gov_action_proposal_id" IS NULL AND EXISTS (
+             SELECT 1 FROM "epoch_state" na
+             WHERE na."committee_id" = t0."id" AND na."epoch_no" <= 1364)))
+```
+
+That keeps the "only what both databases have" rule. If one database stopped
+before the Conway boundary, its `epoch_state` has no such row, and in the other
+database the genesis row first appears after the cutoff - so it is left out on
+**both** sides and nothing false is reported.
+
+Where it applies: Phase 1 in normal (cutoff) mode, and `--plan` shows the extra
+condition. Not in `--block-range` mode, which is a window of block positions, and
+these rows have none. Phase 2 cannot put them in a block window either, so it
+checks them as a group of their own and, when they differ, adds a line such as
+
+```
+committee: rows with no block (gov_action_proposal_id IS NULL, the genesis row): content differs (db1 n=1, db2 n=1)
+```
+
+next to any block windows (in the JSON it is `localized_no_block`, kept apart from
+the `localized` window list) - then query the row with
+`gov_action_proposal_id IS NULL` in both databases. The registry entry is `NULL_ANCHOR_BOUNDS` in
+`registries.py`. `event_info.tx_id` is also nullable, but db-sync never writes
+`event_info`, so it is not listed.
+
 ### Columns db-sync fills in later: `LIFECYCLE_EPOCH_COLUMNS`
 
 Bounding works because a row below the cutoff normally never changes again. One

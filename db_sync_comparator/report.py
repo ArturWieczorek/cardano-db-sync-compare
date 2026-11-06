@@ -54,6 +54,8 @@ def print_summary(results: list[TableResult], excluded: list[TablePlan]) -> tupl
                     f"      -> stopped after {len(r.localized)} windows; more differing windows may exist"
                     " (--localize buckets lists them all for block-anchored tables)"
                 )
+            if r.localized_no_block:
+                print(f"      -> {r.localized_no_block}")
             if r.localize_error:
                 print(f"      -> localize failed: {r.localize_error}")
             if r.skipped_cols:
@@ -115,6 +117,7 @@ def build_json_report(
                 "skipped_cols": r.skipped_cols,
                 "schema_drift": r.schema_drift,
                 "epoch_capped_cols": r.epoch_capped_cols,
+                "localized_no_block": r.localized_no_block or None,
                 "localized": r.localized,
                 "localized_truncated": r.localized_truncated,
                 "localize_error": r.localize_error or None,

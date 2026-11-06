@@ -715,9 +715,20 @@ _DDL_GOV = [
     "CREATE TABLE gov_action_proposal (id bigint PRIMARY KEY, tx_id bigint, index int, "
     "ratified_epoch int, enacted_epoch int, dropped_epoch int, expired_epoch int)",
     "CREATE TABLE meta (id bigint PRIMARY KEY, version text)",
+    # The genesis committee and constitution have no proposal (NULL
+    # gov_action_proposal_id); epoch_state records which ones were in force per epoch.
+    "CREATE TABLE voting_anchor (id bigint PRIMARY KEY, block_id bigint, data_hash bytea, url text, type text)",
+    "CREATE TABLE committee (id bigint PRIMARY KEY, gov_action_proposal_id bigint, "
+    "quorum_numerator bigint, quorum_denominator bigint)",
+    "CREATE TABLE constitution (id bigint PRIMARY KEY, gov_action_proposal_id bigint, "
+    "voting_anchor_id bigint, script_hash bytea)",
+    "CREATE TABLE epoch_state (id bigint PRIMARY KEY, committee_id bigint, no_confidence_id bigint, "
+    "constitution_id bigint, epoch_no int)",
 ]
 
-_ALL_TABLES_GOV = "block, tx, tx_out, pool_update, gov_action_proposal, meta"
+_ALL_TABLES_GOV = (
+    "block, tx, tx_out, pool_update, gov_action_proposal, meta, voting_anchor, committee, constitution, epoch_state"
+)
 
 
 def _seed_data_gov(conn, off: int, extra_tip: bool, version: str) -> None:
@@ -738,6 +749,26 @@ def _seed_data_gov(conn, off: int, extra_tip: bool, version: str) -> None:
     if extra_tip:
         conn.execute("INSERT INTO gov_action_proposal VALUES (%s, %s, 0, NULL, NULL, NULL, NULL)", (3 + off, 6 + off))
     conn.execute("INSERT INTO meta VALUES (%s, %s)", (1 + off, version))
+    # Genesis committee / constitution (no proposal), then P1's committee and
+    # constitution. epoch_state: the genesis ones are in force in epoch 1, P1's
+    # from epoch 2 on (up to each DB's tip epoch).
+    conn.execute(
+        "INSERT INTO voting_anchor VALUES (%s, %s, decode(md5('anchor-g'),'hex'), 'https://g', 'constitution')",
+        (1 + off, 2 + off),
+    )
+    conn.execute(
+        "INSERT INTO voting_anchor VALUES (%s, %s, decode(md5('anchor-p1'),'hex'), 'https://p1', 'constitution')",
+        (2 + off, 4 + off),
+    )
+    conn.execute("INSERT INTO committee VALUES (%s, NULL, 2, 3)", (1 + off,))
+    conn.execute("INSERT INTO committee VALUES (%s, %s, 3, 4)", (2 + off, 2 + off))
+    conn.execute("INSERT INTO constitution VALUES (%s, NULL, %s, decode(md5('const-g'),'hex'))", (1 + off, 1 + off))
+    conn.execute(
+        "INSERT INTO constitution VALUES (%s, %s, %s, decode(md5('const-p1'),'hex'))", (2 + off, 2 + off, 2 + off)
+    )
+    for e in range(1, (3 if extra_tip else 2) + 1):
+        member = 1 if e < 2 else 2
+        conn.execute("INSERT INTO epoch_state VALUES (%s, %s, NULL, %s, %s)", (e + off, member + off, member + off, e))
 
 
 @pytest.fixture(scope="session")
@@ -836,3 +867,124 @@ def test_lifecycle_cap_does_not_change_the_hash_when_nothing_is_above_the_cutoff
     _, capped, _ = _compare_one(*two_dbs_gov, "gov_action_proposal")
     _, uncapped, _ = _compare_one(*two_dbs_gov, "gov_action_proposal", cap_lifecycle=False)
     assert (capped.n1, capped.h1, capped.n2, capped.h2) == (uncapped.n1, uncapped.h1, uncapped.n2, uncapped.h2)
+
+
+@pytest.mark.parametrize("table", ["committee", "constitution"])
+def test_genesis_governance_row_is_compared(two_dbs_gov, table):
+    # The genesis committee / constitution have a NULL gov_action_proposal_id, so
+    # the id-range bound used to drop them silently: only P1's row was compared.
+    _, result, _ = _compare_one(*two_dbs_gov, table)
+    assert result.status == "MATCH", result.note
+    assert result.n1 == result.n2 == 2
+
+
+@pytest.mark.parametrize(
+    ("table", "fault"),
+    [
+        ("committee", "UPDATE committee SET quorum_numerator = quorum_numerator + 1 WHERE id = 101"),
+        ("constitution", "UPDATE constitution SET script_hash = decode(md5('x'),'hex') WHERE id = 101"),
+    ],
+)
+def test_genesis_governance_row_difference_is_found(two_dbs_gov, table, fault):
+    # Before the fix this was a MATCH: the corrupted genesis row was never hashed.
+    c1, c2 = two_dbs_gov
+    c2.execute(fault)
+    _, result, _ = _compare_one(c1, c2, table)
+    assert result.status == "HASH_DIFF"
+    assert result.n1 == result.n2 == 2
+
+
+def test_genesis_row_after_the_cutoff_epoch_is_left_out_on_both_sides(two_dbs_gov):
+    # The lower DB's tip is before the Conway boundary: it has no genesis committee,
+    # and the ahead DB's genesis committee first appears in epoch 3, beyond the
+    # cutoff (epoch 2). It must be left out of both sides - no false COUNT_DIFF.
+    c1, c2 = two_dbs_gov
+    c1.execute("DELETE FROM committee WHERE id = 1")
+    c1.execute("UPDATE epoch_state SET committee_id = 2 WHERE committee_id = 1")
+    c2.execute("UPDATE epoch_state SET committee_id = 102 WHERE epoch_no < 3")
+    c2.execute("UPDATE epoch_state SET committee_id = 101 WHERE epoch_no = 3")
+    _, result, _ = _compare_one(c1, c2, "committee")
+    assert result.status == "MATCH", result.note
+    assert result.n1 == result.n2 == 1
+
+
+_GENESIS_LINE = (
+    "rows with no block (gov_action_proposal_id IS NULL, the genesis row): content differs (db1 n=1, db2 n=1)"
+)
+
+
+@pytest.mark.parametrize("method", ["bisect", "buckets"])
+def test_phase_2_reports_a_genesis_only_difference(two_dbs_gov, method):
+    # A genesis row has no block, so no block window can contain it. Phase 2 checks
+    # those rows as a group of their own and says so, instead of an empty list
+    # that reads as "nothing found" - with either localizer.
+    from db_sync_comparator.cli import _localize_mismatch
+
+    c1, c2 = two_dbs_gov
+    c2.execute("UPDATE committee SET quorum_numerator = quorum_numerator + 1 WHERE id = 101")
+    plan, result, cutoff = _compare_one(c1, c2, "committee")
+    assert result.status == "HASH_DIFF"
+    _localize_mismatch(result, plan, c1, c2, cutoff, 2, method, 1024, 0)
+    assert result.localized == []  # the window list stays windows only
+    assert result.localized_no_block == _GENESIS_LINE
+    assert result.localized_truncated is False
+    assert result.localize_error == ""
+
+
+def test_phase_2_does_not_blame_the_genesis_row_for_a_block_difference(two_dbs_gov):
+    # P1's committee (created in block 3) differs; the genesis row does not.
+    from db_sync_comparator.cli import _localize_mismatch
+
+    c1, c2 = two_dbs_gov
+    c2.execute("UPDATE committee SET quorum_numerator = quorum_numerator + 1 WHERE id = 102")
+    plan, result, cutoff = _compare_one(c1, c2, "committee")
+    assert result.status == "HASH_DIFF"
+    _localize_mismatch(result, plan, c1, c2, cutoff, 2, "bisect", 1024, 0)
+    assert result.localized and all(w.startswith("block_no") for w in result.localized)
+    assert result.localized_no_block == ""
+
+
+def test_phase_2_reports_genesis_and_block_differences_apart(two_dbs_gov):
+    # Both differ: the windows list only block windows, the genesis row is reported
+    # on its own - so a window count is never inflated by the genesis line.
+    from db_sync_comparator.cli import _localize_mismatch
+
+    c1, c2 = two_dbs_gov
+    c2.execute("UPDATE committee SET quorum_numerator = quorum_numerator + 1 WHERE id IN (101, 102)")
+    plan, result, cutoff = _compare_one(c1, c2, "committee")
+    _localize_mismatch(result, plan, c1, c2, cutoff, 2, "bisect", 1024, 0)
+    assert [w.split(":")[0] for w in result.localized] == ["block_no 0..5"]
+    assert result.localized_no_block == _GENESIS_LINE
+
+
+def test_phase_2_on_an_ordinary_table_is_unaffected(two_dbs):
+    # Tables with no NULL-anchored rows must localize exactly as before: windows
+    # found, no error, nothing about rows with no block.
+    from db_sync_comparator.cli import _localize_mismatch
+
+    c1, c2 = two_dbs
+    c2.execute("UPDATE pool_relay SET port = -12900 WHERE id = 101")
+    plan, result, cutoff = _compare_one(c1, c2, "pool_relay")
+    _localize_mismatch(result, plan, c1, c2, cutoff, 0, "bisect", 1024, 0)
+    assert result.localized and all(w.startswith("block_no") for w in result.localized)
+    assert result.localize_error == ""
+    assert result.localized_no_block == ""
+
+
+def test_cli_run_counts_the_genesis_rows(two_dbs_gov, _db_dsns_gov, tmp_path):
+    # The whole command, not just compare_table: the genesis rows are counted.
+    import json
+
+    from db_sync_comparator.cli import main
+
+    report = tmp_path / "report.json"
+    dsn1, dsn2 = _db_dsns_gov
+    # --epoch-margin 0: the fixture's tips are in epochs 2 and 3 and the genesis rows
+    # are first in force in epoch 1, inside the common range only without a margin.
+    argv = ["--db1", dsn1, "--db2", dsn2, "--tables", "committee,constitution", "--epoch-margin", "0"]
+    rc = main([*argv, "--json", str(report)])
+    rows = {r["table"]: r for r in json.loads(report.read_text())["results"]}
+    for table in ("committee", "constitution"):
+        assert rows[table]["status"] == "MATCH", rows[table]["note"]
+        assert rows[table]["n1"] == rows[table]["n2"] == 2
+    assert rc == 0
