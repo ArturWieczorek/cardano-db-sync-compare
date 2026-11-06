@@ -314,13 +314,56 @@ def test_localize_buckets_finds_the_faulty_block(two_dbs):
     plan, result, cutoff = _compare_one(c1, c2, "tx_out")
     assert result.status == "HASH_DIFF"
 
-    bucket_wins = localize_buckets(plan, c1, c2, cutoff, 0, n_buckets=1024)
+    bucket_wins = localize_buckets(plan, c1, c2, cutoff, 0, n_buckets=1024).windows
     assert bucket_wins, "buckets localizer returned no window"
     assert any(_covers(w, 3) for w in bucket_wins), bucket_wins
 
     # parity: the bisection localizer also brackets block 3
-    bisect_wins = localize(plan, c1, c2, 0, cutoff, cutoff, 0)
+    bisect_wins = localize(plan, c1, c2, 0, cutoff, cutoff, 0).windows
     assert any(_covers(w, 3) for w in bisect_wins), bisect_wins
+
+
+def test_bisection_says_when_it_stops_at_the_window_cap(two_dbs):
+    # Every in-range block (1..5) gets a differing output. With a cap of 2 the
+    # bisection must return the 2 LOWEST windows and say it stopped early; with
+    # the default cap it finds all 5 and says the list is complete.
+    from db_sync_comparator.compare import localize
+
+    c1, c2 = two_dbs
+    c2.execute("UPDATE tx_out SET value = value + 1 WHERE tx_id BETWEEN 101 AND 105")
+    plan, result, cutoff = _compare_one(c1, c2, "tx_out")
+    assert result.status == "HASH_DIFF"
+
+    capped = localize(plan, c1, c2, 0, cutoff, cutoff, 0, max_leaves=2, min_width=0)
+    assert [w.split(":")[0] for w in capped.windows] == ["block_no 1..1", "block_no 2..2"]
+    assert capped.truncated is True
+
+    full = localize(plan, c1, c2, 0, cutoff, cutoff, 0, min_width=0)
+    assert [w.split(":")[0] for w in full.windows] == [f"block_no {b}..{b}" for b in range(1, 6)]
+    assert full.truncated is False
+
+    # Reaching the cap exactly is not "stopped early": with a cap of 5 the 5th
+    # window is the last one and nothing is left unsearched.
+    exact = localize(plan, c1, c2, 0, cutoff, cutoff, 0, max_leaves=5, min_width=0)
+    assert len(exact.windows) == 5
+    assert exact.truncated is False
+
+
+def test_a_failed_localization_is_recorded_not_just_printed(two_dbs):
+    # A localization query that errors must leave a trace in the result (and so
+    # in the JSON report), not an empty window list that reads as "nothing found".
+    from db_sync_comparator.cli import _localize_mismatch
+    from db_sync_comparator.model import TablePlan, TableResult
+
+    c1, c2 = two_dbs
+    plan = TablePlan(
+        "no_such_table", "normal", select_exprs=['t0."x"'], anchor_kind="idrange", spine="tx", anchor_col="tx_id"
+    )
+    r = TableResult("no_such_table", "normal", status="HASH_DIFF")
+    _localize_mismatch(r, plan, c1, c2, cutoff_block=5, cutoff_epoch=0, method="bisect", n_buckets=1024, timeout_ms=0)
+    assert r.localized == []
+    assert r.localized_truncated is False
+    assert r.localize_error.startswith("UndefinedTable")
 
 
 def test_corrupted_value_is_hash_diff(two_dbs):
@@ -350,7 +393,7 @@ def test_pool_relay_port_overflow_is_found_and_localized(two_dbs):
 
     from db_sync_comparator.compare import localize
 
-    windows = localize(plan, c1, c2, 0, cutoff, cutoff, 0)
+    windows = localize(plan, c1, c2, 0, cutoff, cutoff, 0).windows
     assert windows and any("block_no" in w for w in windows)
 
 

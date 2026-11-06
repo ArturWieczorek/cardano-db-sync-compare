@@ -194,7 +194,9 @@ is it?"** by **binary search** over chain ranges, narrowing to a small block win
 so you can pull the rows and see what changed. (`--localize buckets` does the same
 in one pass - ~11× faster on giant tables; see
 [docs/07](docs/07-performance-and-scaling.md). Phase 2 is skipped under
-`--block-range`, which is already a narrow window.)
+`--block-range`, which is already a narrow window. The default search reports at
+most 8 windows, lowest first, and says `more differing windows may exist` when it
+stopped there.)
 
 These ideas are the same family used by battle-tested tools like Percona's
 `pt-table-checksum` and Datafold's `data-diff`; the bespoke parts - natural-key
@@ -346,7 +348,7 @@ Everything else is optional. It produces two files you will use:
 | File | When written | What to check it for |
 |------|--------------|----------------------|
 | `run.log` (stdout, `-u`) | live, line by line | **progress** - one `OK`/`!!` line + seconds per table; the final **`SUMMARY:`** line (counts of match / discrepancies / accumulator deltas / errors); the **`DISCREPANCIES:`** and **`ERRORS:`** blocks; and the wrapper's **`FINISHED rc=… WALL_SECONDS=…`** line (exit code + total wall-clock) |
-| `report.json` (`--json`) | once, at the very end | the **machine-readable result** - per-table `status`, row counts, the two set-hashes, `seconds`, `localized` windows, `skipped_cols`. This is what you archive, diff between runs, or feed to CI |
+| `report.json` (`--json`) | once, at the very end | the **machine-readable result** - per-table `status`, row counts, the two set-hashes, `seconds`, `localized` windows (plus `localized_truncated` when the search stopped early, and `localize_error` when it failed), `skipped_cols`. This is what you archive, diff between runs, or feed to CI |
 
 When it finishes, triage in three commands:
 

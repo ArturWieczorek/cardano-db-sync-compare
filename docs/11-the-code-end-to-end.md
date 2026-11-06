@@ -98,8 +98,11 @@ step names the function so you can jump to it.
     `compare.localize` (binary search) or `compare.localize_buckets` (single pass) to
     narrow it to a block/epoch window ([how it works, idea 5](03-how-it-works.md),
     [performance](07-performance-and-scaling.md)). This is **non-authoritative**: it only
-    annotates *where*, never changes the verdict. A failure here is caught and printed,
-    never fatal.
+    annotates *where*, never changes the verdict. The per-table work is
+    `cli._localize_mismatch`: it stores the windows on `TableResult.localized`, sets
+    `localized_truncated` when bisection stopped at its 8-window cap with chain left
+    unsearched, and on a failure stores the error in `localize_error` (and prints it)
+    - never fatal.
 
 ### Phase 3 - verify, report, exit
 

@@ -58,3 +58,18 @@ class TableResult:
     schema_drift: dict = field(default_factory=dict)
     localized: list[str] = field(default_factory=list)
     verify: dict = field(default_factory=dict)  # optional accumulator subset-check result
+    # Fields added after 1.0.0 go last, so positional construction keeps working.
+    localized_truncated: bool = False  # Phase 2 stopped at its window cap; more may exist
+    localize_error: str = ""  # why Phase 2 failed for this table (empty when it did not)
+
+
+@dataclass
+class Localization:
+    """What a Phase 2 localizer found for one table.
+
+    ``truncated`` is True when the search stopped at its window cap with parts of
+    the chain not yet searched, so more differing windows may exist.
+    """
+
+    windows: list[str]
+    truncated: bool = False

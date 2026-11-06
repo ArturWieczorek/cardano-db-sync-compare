@@ -107,6 +107,46 @@ def _verify_one(dsn1: str, dsn2: str, table: str) -> dict:
         return {"verified": False, "reason": f"verify failed: {exc}"}
 
 
+def _localize_mismatch(
+    r: TableResult,
+    p: TablePlan,
+    lc1,
+    lc2,
+    cutoff_block: int,
+    cutoff_epoch: int,
+    method: str,
+    n_buckets: int,
+    timeout_ms: int,
+) -> None:
+    """Phase 2 for one mismatching table: find the differing chain windows and
+    record them on ``r`` (with whether the search stopped early, or why it failed).
+
+    A failure is stored on the result as well as printed, so the JSON report
+    tells "localization failed" apart from "nothing localized".
+    """
+    if p.anchor_kind == "idrange":
+        lo, hi = 0, cutoff_block
+    elif p.anchor_kind == "epoch":
+        lo, hi = 0, cutoff_epoch
+    else:
+        return
+    try:
+        if method == "buckets" and p.anchor_kind == "idrange":
+            found = localize_buckets(p, lc1, lc2, cutoff_block, timeout_ms, n_buckets)
+        else:
+            found = localize(p, lc1, lc2, lo, hi, cutoff_block, timeout_ms)
+    except Exception as exc:
+        r.localize_error = f"{type(exc).__name__}: {exc}"
+        print(f"  {r.name}: localize failed: {r.localize_error}")
+        return
+    r.localized = found.windows
+    r.localized_truncated = found.truncated
+    for line in r.localized:
+        print(f"  {r.name}: {line}")
+    if r.localized_truncated:
+        print(f"  {r.name}: stopped after {len(r.localized)} windows; more differing windows may exist")
+
+
 def parse_block_range(spec: str | None) -> tuple[int, int] | None:
     if not spec:
         return None
@@ -259,24 +299,17 @@ def main(argv: list[str] | None = None) -> int:
         lc1, lc2 = connect(args.db1, args.work_mem), connect(args.db2, args.work_mem)
         try:
             for r in mismatches:
-                p = plan_by_name[r.name]
-                if p.anchor_kind == "idrange":
-                    lo, hi = 0, cutoff_block
-                elif p.anchor_kind == "epoch":
-                    lo, hi = 0, cutoff_epoch
-                else:
-                    continue
-                try:
-                    if args.localize == "buckets" and p.anchor_kind == "idrange":
-                        r.localized = localize_buckets(
-                            p, lc1, lc2, cutoff_block, args.statement_timeout, min(args.localize_buckets, 5000)
-                        )
-                    else:
-                        r.localized = localize(p, lc1, lc2, lo, hi, cutoff_block, args.statement_timeout)
-                    for line in r.localized:
-                        print(f"  {r.name}: {line}")
-                except Exception as exc:
-                    print(f"  {r.name}: localize failed: {exc}")
+                _localize_mismatch(
+                    r,
+                    plan_by_name[r.name],
+                    lc1,
+                    lc2,
+                    cutoff_block,
+                    cutoff_epoch,
+                    args.localize,
+                    min(args.localize_buckets, 5000),
+                    args.statement_timeout,
+                )
         finally:
             lc1.close()
             lc2.close()

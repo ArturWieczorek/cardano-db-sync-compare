@@ -29,6 +29,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   views) that assert the view is dropped, the finalised table is epoch-anchored and
   matches, and the toggle is excluded.
 
+### Changed
+
+- **Python API: `compare.localize()` and `compare.localize_buckets()` return a
+  `Localization`** (`windows`, `truncated`) instead of a plain list of strings, so
+  the caller can tell "the search stopped early" from "these are all the windows".
+  The CLI and the JSON report (the stable interface since 1.0.0) are unaffected;
+  only code that imports these functions has to read `.windows`. New
+  `TableResult` fields are added after the existing ones, so building it
+  positionally still works.
+
+### Fixed
+
+- **Phase 2 now says when it stopped early, and keeps a record of a failed
+  localization.** The default (bisection) localizer stops after 8 differing
+  windows and used to drop the rest of the search without a word, so a short list
+  looked like the whole story. Real example: in the 2026-11 preprod comparison of
+  db-sync 13.7.2.1 vs 13.8.0.0, every `pool_relay` IP address differed across the
+  whole chain, but the report listed 8 windows, all inside blocks 175796-187919,
+  which read as "the bug is only there". The 8 are the **earliest** differing
+  windows (the search goes lowest block first), not a sample. Now the run log and
+  the summary add `stopped after 8 windows; more differing windows may exist`, and
+  the `--json` report carries `localized_truncated: true`. If the search finishes
+  before the cap the flag stays `false` and nothing extra is printed. The same
+  applies to epoch tables (always bisected). `--localize buckets` checks every
+  window, so it does not truncate (except on a chain too short for buckets, where
+  it falls back to bisection and says so the same way). Separately, a localization query that failed was
+  only printed; the JSON then showed `localized: []`, which looks the same as
+  "nothing found". The error now also goes into the result as `localize_error`
+  (JSON, `null` when there was none) and into the summary as
+  `-> localize failed: ...`. Both changes are report-only: verdicts and the exit
+  code are unchanged, and the JSON only gains keys. Covered by unit tests on the
+  report and fixture tests (5 differing blocks with a cap of 2 return the 2
+  lowest windows marked truncated; the default cap returns all 5, not truncated;
+  a failing query is recorded as `UndefinedTable: ...`).
+
 ## [1.0.0] - 2026-06-19
 
 First stable release. Builds on 0.1.0 with Address-variant (`use_address_table`)

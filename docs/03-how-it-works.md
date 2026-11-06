@@ -186,7 +186,10 @@ blocks" down to "blocks 4,490,224-4,491,848". (This halving-and-discarding is th
 idea behind a *Merkle tree* diff, and behaves like weighing coins on a balance to
 find the odd one out.) The tool prints those narrow windows so you can pull the
 actual rows and see what changed - exactly how the
-[pool-relay port bug](08-case-study-pool-relay-port.md) was found.
+[pool-relay port bug](08-case-study-pool-relay-port.md) was found. When the
+difference is spread over many places, the search stops after the 8 lowest
+windows and **says so** ("more differing windows may exist"), so a short list is
+never mistaken for the complete one.
 
 That halving re-scans the data at each step, which is slow on a giant table, so
 there's an opt-in one-pass alternative (`--localize buckets`) that hashes ~1000

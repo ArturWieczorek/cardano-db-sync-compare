@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 
-from db_sync_comparator.model import TablePlan, TableResult
+from db_sync_comparator.model import Localization, TablePlan, TableResult
 from db_sync_comparator.ranges import block_edges, bucket_boundary_ids, compute_spine_ranges
 from db_sync_comparator.sql import bound_predicate, hash_sql, hash_sql_bucketed, value_sql
 
@@ -93,11 +93,13 @@ def localize(
     timeout_ms: int,
     max_leaves: int = 8,
     min_width: int = 2000,
-) -> list[str]:
+) -> Localization:
     """Binary-search the ``[lo, hi]`` window on the common chain coordinate.
 
     ``block_no`` for id-range tables, ``epoch_no`` for epoch tables. Returns the
-    narrowest windows whose hashes still differ.
+    narrowest windows whose hashes still differ, lowest first. The search stops
+    after ``max_leaves`` windows; if parts of the range were still unsearched at
+    that point, the result is marked ``truncated`` (more windows may differ).
     """
     found: list[str] = []
     is_block = plan.anchor_kind == "idrange"
@@ -130,7 +132,7 @@ def localize(
         mid = (a + b) // 2
         stack.append((mid + 1, b))
         stack.append((a, mid))
-    return found
+    return Localization(found, truncated=bool(stack))
 
 
 def align_bucket_boundaries(edges: list[int], b1: list, b2: list) -> tuple[list[int], list[int], list[int]]:
@@ -174,7 +176,7 @@ def localize_buckets(
     cutoff_block: int,
     timeout_ms: int,
     n_buckets: int = 1024,
-) -> list[str]:
+) -> Localization:
     """Single-pass bucket localization for id-range (chain-anchored) tables.
 
     Splits the chain into ~``n_buckets`` block windows, computes the set-hash per
@@ -210,4 +212,4 @@ def localize_buckets(
             lo, hi = ke[v - 1], ke[v]
         kindword = "content differs" if a[0] == b[0] else "row count differs"
         found.append(f"block_no {lo}..{hi}: {kindword} (db1 n={a[0]}, db2 n={b[0]})")
-    return found
+    return Localization(found)  # every bucket is checked, so the list is complete

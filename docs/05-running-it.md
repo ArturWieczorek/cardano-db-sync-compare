@@ -197,6 +197,24 @@ Phase 2: localizing mismatches ...
   pool_relay: block_no 4490224..4491848: content differs (db1 n=681, db2 n=681)
 ```
 
+Two extra lines can appear under a table, in the live output and in the final
+`DISCREPANCIES:` block:
+
+- `stopped after 8 windows; more differing windows may exist` - the default
+  (bisection) search reports at most 8 windows, **the lowest block (or epoch)
+  numbers first**, and then stops. The difference may go on higher up the chain.
+  Do not read the 8 as "the only places that differ". For the full list on a
+  block-anchored table, rerun with `--localize buckets` (it checks every window;
+  only on a chain too short for buckets does it fall back to bisection, and then
+  says so the same way).
+- `localize failed: <error>` - the localization query itself failed (for example a
+  `--statement-timeout`). The verdict above it still stands; only the "where" is
+  missing.
+
+In the `--json` report each table also has `localized_truncated` (`true` when the
+search stopped early) and `localize_error` (the error text, or `null`). Neither
+changes the verdict or the exit code.
+
 > **`--block-range` skips Phase 2.** Localization exists to *narrow a huge chain
 > range down to a small window*. With `--block-range LO:HI` you have already handed
 > the tool a small window, so there is nothing left to narrow - Phase 2 is skipped

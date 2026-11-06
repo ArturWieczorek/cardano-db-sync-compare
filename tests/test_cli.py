@@ -26,3 +26,19 @@ def test_arg_parser_defaults():
 def test_arg_parser_requires_both_dbs():
     with pytest.raises(SystemExit):
         build_arg_parser().parse_args(["--db1", "dbname=a"])
+
+
+def test_localize_mismatch_records_what_the_localizer_found(monkeypatch):
+    # The Phase 2 wrapper must pass the windows and the "stopped early" flag on to
+    # the result (and so to the JSON report). No database: the localizer is faked.
+    from db_sync_comparator import cli
+    from db_sync_comparator.model import Localization, TablePlan, TableResult
+
+    windows = ["block_no 1..1: content differs (db1 n=1, db2 n=1)"]
+    monkeypatch.setattr(cli, "localize", lambda *a, **k: Localization(list(windows), truncated=True))
+    plan = TablePlan("tx_out", "normal", anchor_kind="idrange", spine="tx", anchor_col="tx_id")
+    r = TableResult("tx_out", "normal", status="HASH_DIFF")
+    cli._localize_mismatch(r, plan, None, None, 5, 0, "bisect", 1024, 0)
+    assert r.localized == windows
+    assert r.localized_truncated is True
+    assert r.localize_error == ""

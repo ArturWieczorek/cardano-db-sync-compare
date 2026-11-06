@@ -105,6 +105,8 @@ fault into DB2 and checks the verdict:
 | corrupted value | bump one `tx_out.value` | `HASH_DIFF` (same row count) |
 | dropped row | delete one `tx_out` row | `COUNT_DIFF` |
 | **port overflow** | set a `pool_relay.port` to `-12900` | `HASH_DIFF`, **localized** to the right block window |
+| many differing blocks | bump `tx_out.value` in blocks 1-5 | with a cap of 2: the 2 **lowest** windows, marked `truncated`; with the default cap, or a cap of exactly 5: all 5, not truncated |
+| failing localization | localize a table that does not exist | `localize_error` starts with `UndefinedTable`, no windows |
 | extra asset | insert a `multi_asset` row | `COUNT_DIFF`, flagged *informational* (accumulator) |
 
 That port-overflow test reproduces the **real regression** this tool found on

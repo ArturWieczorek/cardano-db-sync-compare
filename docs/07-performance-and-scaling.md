@@ -167,9 +167,19 @@ it's the maximum number of *differing result windows* ("leaves") it will report.
 halving goes as deep as needed: to shrink preprod's ~4.8M-block chain down to a
 2000-block window takes about **12 halvings**, not 8. For a single difference you get
 **one** leaf (one ~2000-block window, i.e. pinpointing to ~0.04% of the chain) after
-~12 levels down one branch. The `8` cap only bites when corruption is **scattered
-across many places** - then it reports the first 8 differing windows as a
-representative sample rather than listing every one. And note the axis is **block
+~12 levels down one branch. The `8` cap only bites when the difference is **scattered
+across many places** - then it reports the **first 8 differing windows (the lowest
+block numbers)** and stops searching. They are not a sample of the whole chain: the
+search goes lowest block first, so everything above the 8th window is simply not
+looked at. The report says so - the run log and summary print
+`stopped after 8 windows; more differing windows may exist` and the JSON has
+`localized_truncated: true`. Real example: comparing preprod db-sync 13.7.2.1 vs
+13.8.0.0, every `pool_relay` IP row differed along the whole chain, yet bisection
+listed 8 windows all inside blocks 175796-187919. Without the "stopped" line that
+reads as "the bug is only in those blocks". When you need the full list for a
+block-anchored table, use `--localize buckets`, which checks every window (on a
+chain too short for buckets it falls back to bisection and reports a cut-off list
+the same way). And note the axis is **block
 numbers, not rows**: a 2000-block window can hold many rows, and the number of
 halvings depends on how many *blocks* the chain has, not how many rows the table has.
 
